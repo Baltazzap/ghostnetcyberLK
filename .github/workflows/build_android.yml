@@ -1,0 +1,83 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v5
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Create Android platform files
+        run: flutter create --platforms=android --org ru.ghostnet .
+
+      - name: Fix Android name and remove MainActivity duplicates
+        run: python tools/patch_app_name.py
+
+      - name: Install Firebase Android config
+        shell: bash
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Searching google-services.json..."
+          find . -maxdepth 3 -name "google-services.json" -print || true
+
+          GOOGLE_SERVICES_FILE=""
+
+          if [ -f "google-services.json" ]; then
+            GOOGLE_SERVICES_FILE="google-services.json"
+          elif [ -f "app/google-services.json" ]; then
+            GOOGLE_SERVICES_FILE="app/google-services.json"
+          elif [ -f "$GITHUB_WORKSPACE/google-services.json" ]; then
+            GOOGLE_SERVICES_FILE="$GITHUB_WORKSPACE/google-services.json"
+          elif [ -f "$GITHUB_WORKSPACE/app/google-services.json" ]; then
+            GOOGLE_SERVICES_FILE="$GITHUB_WORKSPACE/app/google-services.json"
+          fi
+
+          if [ -z "$GOOGLE_SERVICES_FILE" ]; then
+            echo "google-services.json not found"
+            echo "Put Firebase Android config either near pubspec.yaml or to app/google-services.json."
+            exit 1
+          fi
+
+          echo "Using Firebase config: $GOOGLE_SERVICES_FILE"
+          mkdir -p android/app
+          cp "$GOOGLE_SERVICES_FILE" android/app/google-services.json
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Build Android APK
+        run: flutter build apk --release
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: GhostNet-Cyber-VPN-APK
+          path: build/app/outputs/flutter-apk/app-release.apk

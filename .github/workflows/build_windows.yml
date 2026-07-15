@@ -1,0 +1,67 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v5
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Create platform files
+        run: flutter create --platforms=android,windows --org ru.ghostnet .
+
+      - name: Fix Android name and remove MainActivity duplicates
+        run: python tools/patch_app_name.py
+
+      - name: Fix Windows title, exe name and CMake compatibility
+        run: python tools/patch_windows_title.py
+
+      - name: Show Windows CMake compatibility patch
+        shell: powershell
+        run: |
+          Select-String -Path windows\CMakeLists.txt -Pattern "CMAKE_POLICY_VERSION_MINIMUM"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Add protocol registration helper
+        shell: powershell
+        run: Copy-Item register_ghostnet_protocol_windows.bat build\windows\x64\runner\Release\register_ghostnet_protocol_windows.bat -Force
+
+      - name: Pack Windows build
+        shell: powershell
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath GhostNet-Cyber-VPN-Windows.zip
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: GhostNet-Cyber-VPN-Windows
+          path: GhostNet-Cyber-VPN-Windows.zip
