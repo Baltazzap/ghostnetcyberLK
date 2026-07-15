@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1079678489923",
+    "project_id": "ghostnet-cyber-vpn",
+    "storage_bucket": "ghostnet-cyber-vpn.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1079678489923:android:8c8d0a0dd7b3c0d2dd0bf6",
+        "android_client_info": {
+          "package_name": "ru.ghostnet.cybervpn"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZfhR1KA5LGqsvfs6zKkQ7HxknkZuU-pk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
