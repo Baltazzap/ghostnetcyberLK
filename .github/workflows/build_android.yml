@@ -84,6 +84,9 @@ jobs:
         run: flutter pub get
 
 
+      - name: Verify automatic update system
+        run: python tools/update_system_check.py
+
       - name: Verify security patch
         run: python tools/security_check.py
 
@@ -102,8 +105,19 @@ jobs:
       - name: Build Android APK
         run: flutter build apk --release
 
+      - name: Prepare Android release files
+        shell: bash
+        run: |
+          mkdir -p release
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            release/GhostNet-Cyber-VPN.apk
+          python tools/create_update_manifest.py \
+            --output release/version.json
+
       - name: Upload Android artifact
         uses: actions/upload-artifact@v6
         with:
-          name: GhostNet-Cyber-VPN-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: GhostNet-Cyber-VPN-Android-Release
+          path: |
+            release/GhostNet-Cyber-VPN.apk
+            release/version.json

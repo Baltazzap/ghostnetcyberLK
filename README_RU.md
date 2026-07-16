@@ -215,3 +215,15 @@ const tariffs = <Tariff>[
 - добавлен Win32 named Mutex;
 - повторный запуск активирует существующее окно и завершается;
 - исправление автоматически применяется при сборке GitHub Actions.
+
+
+## Automatic update system
+
+- версия приложения: `1.0.3+4`;
+- проверка обновлений при запуске;
+- ручная проверка в личном кабинете;
+- manifest: `https://ghostnetcyber.ru/downloads/version.json`;
+- поддержка Android APK и Windows ZIP;
+- поддержка обычных и обязательных обновлений;
+- GitHub Actions создаёт файлы с готовыми именами для сайта;
+- инструкция: `AUTO_UPDATE_SETUP_RU.md`.

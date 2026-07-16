@@ -1,0 +1,10 @@
+{
+  "version": "1.0.4",
+  "build": 5,
+  "mandatory": false,
+  "title": "Доступно обновление GhostNet Cyber VPN",
+  "message": "Описание изменений следующей версии.",
+  "published_at": "ДД.ММ.ГГГГ",
+  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN.apk",
+  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Windows.zip"
+}

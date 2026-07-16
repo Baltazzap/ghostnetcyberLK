@@ -10,6 +10,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -85,6 +86,10 @@ const String _tokenKey = 'ghostnet_access_token';
 const String _pendingPaymentKey = 'ghostnet_pending_payment_id';
 const String _pushChannelId = 'ghostnet_notifications';
 const String _pushChannelName = 'GhostNet уведомления';
+const String appUpdateManifestUrl =
+    'https://ghostnetcyber.ru/downloads/version.json';
+const String _dismissedUpdateVersionKey =
+    'ghostnet_dismissed_update_version';
 
 
 class AuthTokenStorage {
@@ -125,6 +130,349 @@ class AuthTokenStorage {
     await prefs.remove(_tokenKey);
   }
 }
+
+
+
+class AppUpdateInfo {
+  final String version;
+  final int build;
+  final String title;
+  final String message;
+  final String downloadUrl;
+  final String publishedAt;
+  final bool mandatory;
+
+  const AppUpdateInfo({
+    required this.version,
+    required this.build,
+    required this.title,
+    required this.message,
+    required this.downloadUrl,
+    required this.publishedAt,
+    required this.mandatory,
+  });
+
+  String get releaseId => '$version+$build';
+
+  factory AppUpdateInfo.fromJson(Map<String, dynamic> json) {
+    final rawBuild = json['build'];
+    final build = rawBuild is num
+        ? rawBuild.toInt()
+        : int.tryParse(rawBuild?.toString() ?? '') ?? 0;
+
+    final downloadUrl = Platform.isWindows
+        ? json['windows_url']?.toString() ?? ''
+        : json['android_url']?.toString() ?? '';
+
+    return AppUpdateInfo(
+      version: json['version']?.toString().trim() ?? '',
+      build: build,
+      title: json['title']?.toString().trim().isNotEmpty == true
+          ? json['title'].toString().trim()
+          : 'Доступно обновление GhostNet',
+      message: json['message']?.toString().trim().isNotEmpty == true
+          ? json['message'].toString().trim()
+          : 'Установите новую версию приложения.',
+      downloadUrl: downloadUrl.trim(),
+      publishedAt: json['published_at']?.toString().trim() ?? '',
+      mandatory: json['mandatory'] == true,
+    );
+  }
+}
+
+enum _AppUpdateAction {
+  later,
+  download,
+}
+
+class AppUpdateService {
+  static const Duration _timeout = Duration(seconds: 10);
+
+  static Future<void> check(
+    BuildContext context, {
+    bool manual = false,
+  }) async {
+    if (!Platform.isAndroid && !Platform.isWindows) {
+      if (manual && context.mounted) {
+        _showSnack(context, 'Проверка обновлений доступна на Android и Windows.');
+      }
+      return;
+    }
+
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      final update = await _fetch();
+
+      if (update == null) {
+        if (manual && context.mounted) {
+          _showSnack(context, 'Сервер обновлений не вернул данные.');
+        }
+        return;
+      }
+
+      final currentBuild = int.tryParse(packageInfo.buildNumber) ?? 0;
+      final isNewer = _isNewer(
+        currentVersion: packageInfo.version,
+        currentBuild: currentBuild,
+        remoteVersion: update.version,
+        remoteBuild: update.build,
+      );
+
+      if (!isNewer) {
+        if (manual && context.mounted) {
+          _showSnack(
+            context,
+            'Установлена последняя версия: ${packageInfo.version}+$currentBuild.',
+          );
+        }
+        return;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final dismissedRelease = prefs.getString(_dismissedUpdateVersionKey);
+
+      if (!manual &&
+          !update.mandatory &&
+          dismissedRelease == update.releaseId) {
+        return;
+      }
+
+      if (!context.mounted) return;
+
+      final action = await _showUpdateDialog(
+        context,
+        update: update,
+        currentVersion: packageInfo.version,
+        currentBuild: currentBuild,
+      );
+
+      if (action == _AppUpdateAction.download) {
+        await openExternal(update.downloadUrl);
+        return;
+      }
+
+      if (action == _AppUpdateAction.later && !update.mandatory) {
+        await prefs.setString(
+          _dismissedUpdateVersionKey,
+          update.releaseId,
+        );
+      }
+    } on TimeoutException {
+      if (manual && context.mounted) {
+        _showSnack(context, 'Сервер обновлений не ответил за 10 секунд.');
+      }
+    } on SocketException {
+      if (manual && context.mounted) {
+        _showSnack(context, 'Нет подключения к интернету.');
+      }
+    } catch (error) {
+      if (manual && context.mounted) {
+        _showSnack(
+          context,
+          'Не удалось проверить обновления: '
+          '${error.toString().replaceFirst('Exception: ', '')}',
+        );
+      }
+    }
+  }
+
+  static Future<AppUpdateInfo?> _fetch() async {
+    final baseUri = Uri.parse(appUpdateManifestUrl);
+    final uri = baseUri.replace(
+      queryParameters: {
+        ...baseUri.queryParameters,
+        't': DateTime.now().millisecondsSinceEpoch.toString(),
+      },
+    );
+
+    final response = await http.get(
+      uri,
+      headers: const {
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache',
+      },
+    ).timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Сервер обновлений вернул код ${response.statusCode}.',
+      );
+    }
+
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('Некорректный формат version.json.');
+    }
+
+    final update = AppUpdateInfo.fromJson(decoded);
+    if (update.version.isEmpty ||
+        update.build <= 0 ||
+        update.downloadUrl.isEmpty) {
+      throw Exception('В version.json отсутствуют обязательные поля.');
+    }
+
+    return update;
+  }
+
+  static bool _isNewer({
+    required String currentVersion,
+    required int currentBuild,
+    required String remoteVersion,
+    required int remoteBuild,
+  }) {
+    final versionComparison = _compareVersions(
+      remoteVersion,
+      currentVersion,
+    );
+
+    if (versionComparison > 0) return true;
+    if (versionComparison < 0) return false;
+    return remoteBuild > currentBuild;
+  }
+
+  static int _compareVersions(String first, String second) {
+    final firstParts = _versionParts(first);
+    final secondParts = _versionParts(second);
+    final length = math.max(firstParts.length, secondParts.length);
+
+    for (var index = 0; index < length; index++) {
+      final firstValue =
+          index < firstParts.length ? firstParts[index] : 0;
+      final secondValue =
+          index < secondParts.length ? secondParts[index] : 0;
+
+      if (firstValue > secondValue) return 1;
+      if (firstValue < secondValue) return -1;
+    }
+
+    return 0;
+  }
+
+  static List<int> _versionParts(String value) {
+    return value
+        .split('.')
+        .map((part) {
+          final match = RegExp(r'^\d+').firstMatch(part.trim());
+          return int.tryParse(match?.group(0) ?? '') ?? 0;
+        })
+        .toList(growable: false);
+  }
+
+  static Future<_AppUpdateAction?> _showUpdateDialog(
+    BuildContext context, {
+    required AppUpdateInfo update,
+    required String currentVersion,
+    required int currentBuild,
+  }) {
+    return showDialog<_AppUpdateAction>(
+      context: context,
+      barrierDismissible: !update.mandatory,
+      builder: (dialogContext) {
+        return PopScope(
+          canPop: !update.mandatory,
+          child: AlertDialog(
+            backgroundColor: GhostColors.panel,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+              side: BorderSide(
+                color: GhostColors.orange.withOpacity(.38),
+              ),
+            ),
+            title: Row(
+              children: [
+                const CircleIcon(icon: Icons.system_update_alt_rounded),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    update.title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      MiniBadge(
+                        text: 'СЕЙЧАС $currentVersion+$currentBuild',
+                      ),
+                      MiniBadge(
+                        text: 'НОВАЯ ${update.version}+${update.build}',
+                      ),
+                      if (update.mandatory)
+                        const MiniBadge(text: 'ОБЯЗАТЕЛЬНО'),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    update.message,
+                    style: const TextStyle(
+                      color: GhostColors.muted,
+                      height: 1.5,
+                    ),
+                  ),
+                  if (update.publishedAt.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Опубликовано: ${update.publishedAt}',
+                      style: const TextStyle(
+                        color: GhostColors.gold,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                  if (update.mandatory) ...[
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Для продолжения работы необходимо установить '
+                      'актуальную версию.',
+                      style: TextStyle(
+                        color: GhostColors.orangeSoft,
+                        fontWeight: FontWeight.w900,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              if (!update.mandatory)
+                SecondaryButton(
+                  text: 'Позже',
+                  icon: Icons.schedule_rounded,
+                  onPressed: () => Navigator.pop(
+                    dialogContext,
+                    _AppUpdateAction.later,
+                  ),
+                ),
+              PrimaryButton(
+                text: Platform.isWindows
+                    ? 'Скачать для Windows'
+                    : 'Скачать APK',
+                icon: Icons.download_rounded,
+                onPressed: () => Navigator.pop(
+                  dialogContext,
+                  _AppUpdateAction.download,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 
 class PushService {
   static final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
@@ -1146,6 +1494,7 @@ class AppBootstrap extends StatefulWidget {
 
 class _AppBootstrapState extends State<AppBootstrap> {
   bool _loading = true;
+  bool _updateCheckScheduled = false;
   UserProfile? _profile;
 
   @override
@@ -1209,9 +1558,21 @@ class _AppBootstrapState extends State<AppBootstrap> {
     setState(() => _profile = null);
   }
 
+
+  void _scheduleUpdateCheck() {
+    if (_updateCheckScheduled) return;
+    _updateCheckScheduled = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(AppUpdateService.check(context));
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const SplashScreen();
+    _scheduleUpdateCheck();
     if (_profile == null) return RegisterScreen(onLogin: _login, onRegister: _register);
     return MainShell(profile: _profile!, onLogout: _logout);
   }
@@ -5181,6 +5542,12 @@ class AccountActions extends StatelessWidget {
           const MiniBadge(text: 'БЫСТРЫЕ ДЕЙСТВИЯ'),
           const SizedBox(height: 14),
           PrimaryButton(text: 'Купить / продлить', icon: Icons.update_rounded, onPressed: onOpenTariffs),
+          const SizedBox(height: 12),
+          SecondaryButton(
+            text: 'Проверить обновления',
+            icon: Icons.system_update_alt_rounded,
+            onPressed: () => AppUpdateService.check(context, manual: true),
+          ),
           const SizedBox(height: 12),
           SecondaryButton(text: 'Поддержка', icon: Icons.support_agent_rounded, onPressed: onOpenSupport),
           const SizedBox(height: 18),

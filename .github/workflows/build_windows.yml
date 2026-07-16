@@ -100,6 +100,9 @@ jobs:
         run: flutter pub get
 
 
+      - name: Verify automatic update system
+        run: python tools/update_system_check.py
+
       - name: Verify security patch
         run: python tools/security_check.py
 
@@ -122,12 +125,21 @@ jobs:
         shell: powershell
         run: Copy-Item register_ghostnet_protocol_windows.bat build\windows\x64\runner\Release\register_ghostnet_protocol_windows.bat -Force
 
-      - name: Pack Windows build
+      - name: Pack Windows release
         shell: powershell
-        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath GhostNet-Cyber-VPN-Windows.zip
+        run: |
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          Compress-Archive `
+            -Path build\windows\x64\runner\Release\* `
+            -DestinationPath release\GhostNet-Cyber-VPN-Windows.zip `
+            -Force
+          python tools/create_update_manifest.py `
+            --output release/version.json
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v6
         with:
-          name: GhostNet-Cyber-VPN-Windows
-          path: GhostNet-Cyber-VPN-Windows.zip
+          name: GhostNet-Cyber-VPN-Windows-Release
+          path: |
+            release/GhostNet-Cyber-VPN-Windows.zip
+            release/version.json
