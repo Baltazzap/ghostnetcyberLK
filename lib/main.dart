@@ -3967,6 +3967,36 @@ class HomeHeroCard extends StatefulWidget {
 
 class _HomeHeroCardState extends State<HomeHeroCard> {
   bool _trialLoading = false;
+  bool _loading = true;
+  String? _error;
+  List<SubscriptionInfo> _subscriptions = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboard();
+  }
+
+  Future<void> _loadDashboard() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final subs = await GhostApi.mySubscriptions(widget.profile.token);
+      if (!mounted) return;
+      setState(() {
+        _subscriptions = subs;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _loading = false;
+      });
+    }
+  }
 
   Future<void> _claimTrial() async {
     if (_trialLoading) return;
@@ -3981,6 +4011,7 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
         icon: Icons.check_circle_rounded,
         success: true,
       );
+      await _loadDashboard();
       widget.onOpenAccount();
     } catch (e) {
       if (mounted) {
@@ -3997,56 +4028,229 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
     }
   }
 
+  SubscriptionInfo? get _activeSubscription {
+    for (final sub in _subscriptions) {
+      if (sub.status.toLowerCase() == 'active') return sub;
+    }
+    return _subscriptions.isEmpty ? null : _subscriptions.first;
+  }
+
+  int? _daysLeft(DateTime? expiresAt) {
+    if (expiresAt == null) return null;
+    final diff = expiresAt.difference(DateTime.now());
+    if (diff.inSeconds <= 0) return 0;
+    return diff.inDays + 1;
+  }
+
+  String _serversText(SubscriptionInfo? sub) {
+    final raw = sub?.vpnKey ?? '';
+    final count = raw.split('\n').where((e) => e.trim().isNotEmpty).length;
+    if (count >= 4) return '4 сервера';
+    if (count > 0) return '$count серв.';
+    return 'Лондон / Амстердам / Хельсинки / Прага';
+  }
+
+  Color _statusColor(SubscriptionInfo? sub) {
+    if (sub == null) return GhostColors.gold;
+    if (sub.status.toLowerCase() != 'active') return GhostColors.danger;
+    final days = _daysLeft(sub.expiresAt);
+    if (days != null && days <= 3) return GhostColors.gold;
+    return GhostColors.success;
+  }
+
+  String _statusText(SubscriptionInfo? sub) {
+    if (_loading) return 'Загрузка';
+    if (_error != null) return 'Ошибка';
+    if (sub == null) return 'Нет подписки';
+    if (sub.status.toLowerCase() == 'active') return 'Активна';
+    return sub.status;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final sub = _activeSubscription;
+    final active = sub != null && sub.status.toLowerCase() == 'active';
+    final days = _daysLeft(sub?.expiresAt);
+    final statusColor = _statusColor(sub);
+    final width = MediaQuery.sizeOf(context).width;
+    final titleSize = width < 370 ? 24.0 : width < 520 ? 28.0 : 34.0;
+
     return PremiumCard(
       highlighted: true,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(22),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth > 760;
-          final content = Column(
+          final wide = constraints.maxWidth > 820;
+          final metrics = [
+            DashboardMetric(icon: Icons.shield_rounded, title: 'Статус', value: _statusText(sub), color: statusColor),
+            DashboardMetric(icon: Icons.schedule_rounded, title: 'Осталось', value: active ? (days == null ? '—' : '$days дн.') : '—', color: active && days != null && days <= 3 ? GhostColors.gold : GhostColors.orangeSoft),
+            DashboardMetric(icon: Icons.workspace_premium_rounded, title: 'Тариф', value: active ? (sub?.planName ?? 'Подписка') : 'Выберите', color: GhostColors.orangeSoft),
+            DashboardMetric(icon: Icons.devices_rounded, title: 'Устройства', value: active ? 'до ${sub?.deviceLimit ?? 3}' : 'до 3', color: GhostColors.orangeSoft),
+          ];
+
+          final dashboard = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const MiniBadge(text: '24 ЧАСА БЕСПЛАТНО'),
+              Row(
+                children: [
+                  MiniBadge(text: active ? 'ПРЕМИУМ-ДАШБОРД' : 'GHOSTNET DASHBOARD'),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Обновить',
+                    onPressed: _loading ? null : _loadDashboard,
+                    icon: const Icon(Icons.refresh_rounded, color: GhostColors.orange),
+                  ),
+                ],
+              ),
               const SizedBox(height: 16),
-              Builder(
-                builder: (context) {
-                  final width = MediaQuery.sizeOf(context).width;
-                  final size = width < 370 ? 25.0 : width < 520 ? 28.0 : 33.0;
-                  return Text('Добро пожаловать, ${widget.profile.name}', style: TextStyle(fontSize: size, height: 1.08, fontWeight: FontWeight.w900));
+              Text('Привет, ${widget.profile.name}', style: TextStyle(fontSize: titleSize, height: 1.06, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              Text(
+                active
+                    ? 'Подписка активна до ${formatDate(sub?.expiresAt)}. Управляй ключами, продлением и поддержкой из одного кабинета.'
+                    : 'Оформи подписку или активируй пробный доступ, чтобы получить ключи GhostNet.',
+                style: const TextStyle(color: GhostColors.muted, height: 1.45, fontSize: 14.5),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!, style: const TextStyle(color: GhostColors.gold, height: 1.35, fontSize: 13)),
+              ],
+              const SizedBox(height: 18),
+              LayoutBuilder(
+                builder: (context, metricConstraints) {
+                  final columns = metricConstraints.maxWidth > 680 ? 4 : metricConstraints.maxWidth > 430 ? 2 : 1;
+                  final itemWidth = (metricConstraints.maxWidth - 10 * (columns - 1)) / columns;
+                  return Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: metrics.map((e) => SizedBox(width: itemWidth, child: e)).toList(),
+                  );
                 },
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'Покупка подписки, управление ключами и поддержка GhostNet в одном приложении.',
-                style: TextStyle(color: GhostColors.muted, height: 1.48, fontSize: 15),
-              ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 18),
               Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 285),
+                  constraints: const BoxConstraints(maxWidth: 340),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      PrimaryButton(text: 'Приобрести подписку', icon: Icons.shopping_cart_rounded, onPressed: widget.onOpenTariffs),
+                      PrimaryButton(text: active ? 'Продлить подписку' : 'Приобрести подписку', icon: Icons.shopping_cart_rounded, onPressed: widget.onOpenTariffs),
                       const SizedBox(height: 10),
-                      PrimaryButton(text: _trialLoading ? 'Активируем...' : 'Пробный доступ', icon: Icons.card_giftcard_rounded, onPressed: _trialLoading ? null : _claimTrial),
+                      PrimaryButton(text: 'Мои ключи', icon: Icons.vpn_key_rounded, onPressed: widget.onOpenAccount),
+                      if (!active) ...[
+                        const SizedBox(height: 10),
+                        SecondaryButton(text: _trialLoading ? 'Активируем...' : 'Пробный доступ', icon: Icons.card_giftcard_rounded, onPressed: _trialLoading ? null : _claimTrial),
+                      ],
                     ],
                   ),
                 ),
               ),
             ],
           );
-          if (!wide) return content;
+
+          final side = PremiumDashboardSideCard(
+            status: _statusText(sub),
+            statusColor: statusColor,
+            plan: active ? (sub?.planName ?? 'Подписка') : 'Нет подписки',
+            expires: active ? formatDate(sub?.expiresAt) : '—',
+            servers: _serversText(sub),
+          );
+
+          if (!wide) return dashboard;
           return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: content),
-              const SizedBox(width: 24),
-              const SizedBox(width: 270, child: HeroPreviewCard()),
+              Expanded(child: dashboard),
+              const SizedBox(width: 22),
+              SizedBox(width: 300, child: side),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class DashboardMetric extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String value;
+  final Color color;
+
+  const DashboardMetric({super.key, required this.icon, required this.title, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(.22),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(.07)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withOpacity(.13),
+              border: Border.all(color: color.withOpacity(.22)),
+            ),
+            child: Icon(icon, size: 18, color: color),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(color: GhostColors.muted, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PremiumDashboardSideCard extends StatelessWidget {
+  final String status;
+  final Color statusColor;
+  final String plan;
+  final String expires;
+  final String servers;
+
+  const PremiumDashboardSideCard({super.key, required this.status, required this.statusColor, required this.plan, required this.expires, required this.servers});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(.28),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: GhostColors.orange.withOpacity(.24)),
+        boxShadow: [BoxShadow(color: GhostColors.orange.withOpacity(.10), blurRadius: 22)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Row(children: [LogoOrb(size: 54), SizedBox(width: 12), Expanded(child: Text('GHOSTNET STATUS', style: TextStyle(fontWeight: FontWeight.w900)))]),
+          const SizedBox(height: 18),
+          StatusLine(label: 'Статус', value: status, color: statusColor),
+          const SizedBox(height: 10),
+          StatusLine(label: 'Тариф', value: plan),
+          const SizedBox(height: 10),
+          StatusLine(label: 'До', value: expires),
+          const SizedBox(height: 10),
+          StatusLine(label: 'Серверы', value: servers),
+        ],
       ),
     );
   }
