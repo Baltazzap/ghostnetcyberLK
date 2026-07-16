@@ -65,7 +65,7 @@ def main() -> None:
         ),
         "windows_url": (
             "https://ghostnetcyber.ru/downloads/"
-            "GhostNet-Cyber-VPN-Windows.zip"
+            "GhostNet-Cyber-VPN-Setup.exe"
         ),
     }
 

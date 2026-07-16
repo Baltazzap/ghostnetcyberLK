@@ -25,9 +25,18 @@ dart run flutter_launcher_icons || goto :error
 echo Building Windows app...
 flutter build windows --release || goto :error
 
+echo Building Windows installer...
+python tools\build_windows_installer.py || goto :error
+
+echo Creating update manifest...
+python tools\create_update_manifest.py --output release\version.json || goto :error
+
 echo.
-echo Windows Release folder:
-echo build\windows\x64\runner\Release
+echo Windows installer:
+echo release\GhostNet-Cyber-VPN-Setup.exe
+echo.
+echo Update manifest:
+echo release\version.json
 pause
 exit /b 0
 

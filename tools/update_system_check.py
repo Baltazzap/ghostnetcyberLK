@@ -40,4 +40,11 @@ for key in ("android_url", "windows_url"):
     if not str(manifest.get(key, "")).startswith("https://"):
         raise SystemExit(f"Updater check failed: invalid {key}")
 
+if not str(manifest["windows_url"]).endswith(
+    "GhostNet-Cyber-VPN-Setup.exe"
+):
+    raise SystemExit(
+        "Updater check failed: Windows URL must point to installer"
+    )
+
 print("Updater contract check passed.")

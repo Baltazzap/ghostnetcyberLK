@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows Installer
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ env:
 
 jobs:
   build-windows:
-    name: Build Windows EXE
+    name: Build Windows Installer
     runs-on: windows-2022
 
     steps:
@@ -125,21 +125,51 @@ jobs:
         shell: powershell
         run: Copy-Item register_ghostnet_protocol_windows.bat build\windows\x64\runner\Release\register_ghostnet_protocol_windows.bat -Force
 
-      - name: Pack Windows release
+      - name: Verify Inno Setup compiler
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Path release -Force | Out-Null
-          Compress-Archive `
-            -Path build\windows\x64\runner\Release\* `
-            -DestinationPath release\GhostNet-Cyber-VPN-Windows.zip `
-            -Force
-          python tools/create_update_manifest.py `
-            --output release/version.json
+          $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
 
-      - name: Upload Windows artifact
+          if (-not $iscc) {
+            $fallback = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $fallback)) {
+              throw "ISCC.exe was not found on windows-2022."
+            }
+            $isccPath = $fallback
+          } else {
+            $isccPath = $iscc.Source
+          }
+
+          Write-Host "ISCC: $isccPath"
+          & $isccPath /?
+
+      - name: Build Windows installer
+        run: python tools/build_windows_installer.py
+
+      - name: Create Windows update manifest
+        run: python tools/create_update_manifest.py --output release/version.json
+
+      - name: Verify Windows installer
+        shell: powershell
+        run: |
+          $installer = "release\GhostNet-Cyber-VPN-Setup.exe"
+
+          if (-not (Test-Path $installer)) {
+            throw "Windows installer was not created."
+          }
+
+          $size = (Get-Item $installer).Length
+          if ($size -lt 1000000) {
+            throw "Windows installer is unexpectedly small: $size bytes"
+          }
+
+          Write-Host "Installer: $installer"
+          Write-Host "Size: $size bytes"
+
+      - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v6
         with:
-          name: GhostNet-Cyber-VPN-Windows-Release
+          name: GhostNet-Cyber-VPN-Windows-Installer
           path: |
-            release/GhostNet-Cyber-VPN-Windows.zip
+            release/GhostNet-Cyber-VPN-Setup.exe
             release/version.json

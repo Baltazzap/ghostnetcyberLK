@@ -457,7 +457,7 @@ class AppUpdateService {
                 ),
               PrimaryButton(
                 text: Platform.isWindows
-                    ? 'Скачать для Windows'
+                    ? 'Скачать установщик Windows'
                     : 'Скачать APK',
                 icon: Icons.download_rounded,
                 onPressed: () => Navigator.pop(
