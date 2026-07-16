@@ -40,11 +40,44 @@ for key in ("android_url", "windows_url"):
     if not str(manifest.get(key, "")).startswith("https://"):
         raise SystemExit(f"Updater check failed: invalid {key}")
 
-if not str(manifest["windows_url"]).endswith(
-    "GhostNet-Cyber-VPN-Setup.exe"
+windows_url = str(manifest.get("windows_url", ""))
+android_url = str(manifest.get("android_url", ""))
+
+windows_filename = windows_url.rsplit("/", 1)[-1]
+android_filename = android_url.rsplit("/", 1)[-1]
+
+if not re.fullmatch(
+    r"GhostNet-Cyber-VPN-Setup-\d+(?:\.\d+)*-\d+\.exe",
+    windows_filename,
 ):
     raise SystemExit(
-        "Updater check failed: Windows URL must point to installer"
+        "Updater check failed: Windows URL must point to a "
+        "versioned installer, for example "
+        "GhostNet-Cyber-VPN-Setup-1.0.6-7.exe"
     )
+
+if not re.fullmatch(
+    r"GhostNet-Cyber-VPN-\d+(?:\.\d+)*-\d+\.apk",
+    android_filename,
+):
+    raise SystemExit(
+        "Updater check failed: Android URL must point to a "
+        "versioned APK, for example "
+        "GhostNet-Cyber-VPN-1.0.6-7.apk"
+    )
+
+platform_windows = manifest.get("windows")
+if isinstance(platform_windows, dict):
+    if platform_windows.get("url") != windows_url:
+        raise SystemExit(
+            "Updater check failed: windows.url does not match windows_url"
+        )
+
+platform_android = manifest.get("android")
+if isinstance(platform_android, dict):
+    if platform_android.get("url") != android_url:
+        raise SystemExit(
+            "Updater check failed: android.url does not match android_url"
+        )
 
 print("Updater contract check passed.")

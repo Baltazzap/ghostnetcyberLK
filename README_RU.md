@@ -287,3 +287,11 @@ const tariffs = <Tariff>[
 - сохранена совместимость со старыми версиями приложения;
 - добавлены SHA-256 и размер файла в manifest при CI-сборке;
 - инструкция: `UPDATE_REPEAT_PROMPT_FIX_RU.md`.
+
+
+## Versioned update URL check fix
+
+- исправлена устаревшая проверка `GhostNet-Cyber-VPN-Setup.exe`;
+- теперь принимаются версионные EXE и APK;
+- проверяется совпадение платформенных URL в `version.json`;
+- версия приложения остаётся `1.0.6+7`.
