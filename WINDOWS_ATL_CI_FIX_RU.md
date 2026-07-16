@@ -6,17 +6,21 @@
 ATL installation failed with code 1
 ```
 
-GitHub-образ `windows-2022` уже содержит Visual Studio 2022 и компонент Visual C++ ATL.
+GitHub-образ `windows-2022` уже содержит:
 
-Workflow теперь:
+- Visual Studio Enterprise 2022;
+- `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`;
+- `Microsoft.VisualStudio.Component.VC.ATL`;
+- заголовок `atlbase.h`.
 
-1. использует `windows-2022`;
-2. не запускает `vs_installer.exe`;
-3. только проверяет наличие ATL;
-4. проверяет наличие `atlbase.h`;
-5. продолжает обычную Flutter Windows-сборку.
+Поэтому workflow теперь:
 
-Изменён файл:
+1. использует фиксированный образ `windows-2022`;
+2. не запускает Visual Studio Installer;
+3. только проверяет наличие ATL и `atlbase.h`;
+4. продолжает обычную Flutter Windows-сборку.
+
+Изменённый файл:
 
 ```text
 .github/workflows/build_windows.yml

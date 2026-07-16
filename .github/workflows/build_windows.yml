@@ -75,6 +75,22 @@ jobs:
       - name: Fix Windows title, exe name and CMake compatibility
         run: python tools/patch_windows_title.py
 
+
+      - name: Verify Windows single-instance patch
+        shell: powershell
+        run: |
+          Select-String `
+            -Path windows\runner\main.cpp `
+            -Pattern "GHOSTNET_SINGLE_INSTANCE_GUARD_BEGIN"
+
+          Select-String `
+            -Path windows\runner\main.cpp `
+            -Pattern "CreateMutexW"
+
+          Select-String `
+            -Path windows\runner\main.cpp `
+            -Pattern "FindWindowW"
+
       - name: Show Windows CMake compatibility patch
         shell: powershell
         run: |
