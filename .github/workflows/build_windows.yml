@@ -11,7 +11,7 @@ env:
 jobs:
   build-windows:
     name: Build Windows EXE
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - name: Checkout project
@@ -25,24 +25,37 @@ jobs:
           cache: true
 
 
-      - name: Ensure Visual C++ ATL is installed
+      - name: Verify preinstalled Visual C++ ATL
         shell: powershell
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-          $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (-not $installPath) { throw "Visual Studio installation was not found." }
-          $arguments = @(
-            "modify",
-            "--installPath", $installPath,
-            "--add", "Microsoft.VisualStudio.Component.VC.ATL",
-            "--quiet",
-            "--norestart"
-          )
-          $process = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru
-          if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
-            throw "ATL installation failed with code $($process.ExitCode)"
+
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found on the GitHub runner."
           }
+
+          $installPath = & $vswhere `
+            -latest `
+            -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -requires Microsoft.VisualStudio.Component.VC.ATL `
+            -property installationPath
+
+          if (-not $installPath) {
+            throw "The GitHub windows-2022 image does not expose the preinstalled Visual C++ ATL component."
+          }
+
+          $atlHeader = Get-ChildItem `
+            -Path (Join-Path $installPath "VC\Tools\MSVC\*\atlmfc\include\atlbase.h") `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+          if (-not $atlHeader) {
+            throw "ATL component is registered, but atlbase.h was not found."
+          }
+
+          Write-Host "Visual Studio: $installPath"
+          Write-Host "ATL header: $($atlHeader.FullName)"
 
       - name: Flutter doctor
         run: flutter doctor -v

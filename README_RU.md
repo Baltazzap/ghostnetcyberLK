@@ -198,3 +198,11 @@ const tariffs = <Tariff>[
 
 Перед загрузкой в GitHub прочитай `SECURITY_PATCH_RU.md`.
 В проект добавлены защищённое хранение токена, API-таймауты, HTTPS-only Android-конфигурация и проверки сборки.
+
+
+## Windows ATL CI fix
+
+- Windows workflow закреплён на `windows-2022`;
+- удалена попытка установки ATL через `vs_installer.exe`;
+- добавлена проверка уже установленного ATL;
+- проверяется наличие `atlbase.h`.
