@@ -63,13 +63,57 @@ jobs:
           done
 
           mkdir -p android/app
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | \
-            base64 --decode > android/app/ghostnet-release.jks
 
-          if [ ! -s android/app/ghostnet-release.jks ]; then
-            echo "Decoded Android keystore is empty."
-            exit 1
-          fi
+          python - <<'PY'
+          import base64
+          import os
+          import pathlib
+          import re
+
+          raw = os.environ.get("ANDROID_KEYSTORE_BASE64", "")
+
+          # GitHub CLI called from Windows PowerShell can append CRLF or
+          # another invisible character to stdin. Keep only valid Base64
+          # characters before decoding.
+          cleaned = re.sub(r"[^A-Za-z0-9+/=]", "", raw)
+
+          if not cleaned:
+              raise SystemExit(
+                  "ANDROID_KEYSTORE_BASE64 is empty after normalization."
+              )
+
+          try:
+              decoded = base64.b64decode(cleaned, validate=True)
+          except Exception as error:
+              raise SystemExit(
+                  "ANDROID_KEYSTORE_BASE64 is not valid Base64 after "
+                  f"normalization: {error}"
+              ) from error
+
+          if len(decoded) < 1000:
+              raise SystemExit(
+                  "Decoded Android keystore is unexpectedly small: "
+                  f"{len(decoded)} bytes."
+              )
+
+          target = pathlib.Path(
+              "android/app/ghostnet-release.jks"
+          )
+          target.write_bytes(decoded)
+
+          print(
+              "Android keystore restored: "
+              f"{target} ({len(decoded)} bytes)"
+          )
+          PY
+
+          keytool -list \
+            -keystore android/app/ghostnet-release.jks \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+            -alias "$ANDROID_KEY_ALIAS" \
+            >/dev/null
+
+          echo "Android keystore password and alias verified."
 
       - name: Configure Android release signing
         run: python tools/patch_android_signing.py

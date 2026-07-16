@@ -267,3 +267,12 @@ const tariffs = <Tariff>[
 - при наличии доверенного PFX Windows EXE и Setup подписываются автоматически;
 - приватные ключи не входят в GitHub-архив;
 - инструкция: `SIGNING_FINAL_RU.md`.
+
+
+## Android Base64 secret fix
+
+- исправлена ошибка `base64: invalid input`;
+- workflow удаляет CRLF/BOM перед декодированием JKS;
+- добавлена строгая Base64-проверка;
+- JKS проверяется через `keytool` до сборки;
+- PowerShell-скрипты записывают секреты без завершающего CRLF.

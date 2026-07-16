@@ -47,11 +47,47 @@ function Set-GitHubSecret {
     throw "Secret value is empty: $Name"
   }
 
-  $Value |
-    & $gh.Source secret set $Name @repoArgs --body -
+  $arguments = @(
+    "secret",
+    "set",
+    $Name
+  ) + $repoArgs + @(
+    "--body",
+    "-"
+  )
 
-  if ($LASTEXITCODE -ne 0) {
-    throw "Failed to set GitHub Secret: $Name"
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $gh.Source
+  $startInfo.UseShellExecute = $false
+  $startInfo.RedirectStandardInput = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+
+  foreach ($argument in $arguments) {
+    [void]$startInfo.ArgumentList.Add($argument)
+  }
+
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+
+  [void]$process.Start()
+
+  # Write() is used intentionally instead of WriteLine() so GitHub stores
+  # the exact secret without a trailing CRLF from Windows PowerShell.
+  $process.StandardInput.Write($Value)
+  $process.StandardInput.Close()
+
+  $stdout = $process.StandardOutput.ReadToEnd()
+  $stderr = $process.StandardError.ReadToEnd()
+
+  $process.WaitForExit()
+
+  if ($process.ExitCode -ne 0) {
+    throw "Failed to set GitHub Secret $Name. $stderr"
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($stdout)) {
+    Write-Host $stdout.Trim()
   }
 
   Write-Host "Configured: $Name"
