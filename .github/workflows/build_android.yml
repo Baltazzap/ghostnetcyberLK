@@ -36,6 +36,9 @@ jobs:
       - name: Create Android platform files
         run: flutter create --platforms=android --org ru.ghostnet .
 
+      - name: Fix generated Flutter template test
+        run: python tools/fix_generated_test.py
+
       - name: Fix Android name and remove MainActivity duplicates
         run: python tools/patch_app_name.py
 

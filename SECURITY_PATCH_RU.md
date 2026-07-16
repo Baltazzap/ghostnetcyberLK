@@ -48,3 +48,8 @@ build_windows.bat
 ## Версия
 
 Версия приложения обновлена до `1.0.1+2`.
+
+## Исправление GitHub Actions: widget_test.dart
+
+Flutter автоматически создавал стандартный `test/widget_test.dart`, который ссылался на несуществующий класс `MyApp`.
+Теперь после `flutter create` workflow запускает `tools/fix_generated_test.py` и заменяет шаблонный тест на безопасный тест класса `GhostNetApp`.
