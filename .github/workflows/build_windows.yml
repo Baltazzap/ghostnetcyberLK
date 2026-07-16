@@ -140,8 +140,13 @@ jobs:
             $isccPath = $iscc.Source
           }
 
-          Write-Host "ISCC: $isccPath"
-          & $isccPath /?
+          if (-not (Test-Path $isccPath)) {
+            throw "ISCC.exe path is invalid: $isccPath"
+          }
+
+          $file = Get-Item $isccPath
+          Write-Host "ISCC: $($file.FullName)"
+          Write-Host "Inno Setup version: $($file.VersionInfo.FileVersion)"
 
       - name: Build Windows installer
         run: python tools/build_windows_installer.py
