@@ -12,3 +12,11 @@ windows/flutter/ephemeral/
 .idea/
 .vscode/
 *.iml
+# Signing secrets
+signing/
+*.jks
+*.keystore
+*.pfx
+*.p12
+android/key.properties
+android/app/ghostnet-release.jks

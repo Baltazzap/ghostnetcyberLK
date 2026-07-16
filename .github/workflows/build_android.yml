@@ -42,6 +42,46 @@ jobs:
       - name: Fix Android name and remove MainActivity duplicates
         run: python tools/patch_app_name.py
 
+      - name: Restore Android release signing key
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD
+          do
+            if [ -z "${!name}" ]; then
+              echo "Required GitHub Secret is missing: $name"
+              exit 1
+            fi
+          done
+
+          mkdir -p android/app
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | \
+            base64 --decode > android/app/ghostnet-release.jks
+
+          if [ ! -s android/app/ghostnet-release.jks ]; then
+            echo "Decoded Android keystore is empty."
+            exit 1
+          fi
+
+      - name: Configure Android release signing
+        run: python tools/patch_android_signing.py
+
+      - name: Verify Android signing patch
+        shell: bash
+        run: |
+          grep -R "ANDROID_KEYSTORE_PATH" android/app/build.gradle*
+          grep -R 'signingConfigs.getByName("release")' \
+            android/app/build.gradle* || \
+          grep -R "signingConfigs.release" android/app/build.gradle*
+
       - name: Install Firebase Android config
         shell: bash
         run: |
@@ -102,8 +142,29 @@ jobs:
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 
-      - name: Build Android APK
+      - name: Build signed Android APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/ghostnet-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release
+
+      - name: Verify Android APK signature
+        shell: bash
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" \
+            -type f -name apksigner | sort -V | tail -n 1)
+
+          if [ -z "$APKSIGNER" ]; then
+            echo "apksigner was not found."
+            exit 1
+          fi
+
+          "$APKSIGNER" verify \
+            --verbose \
+            --print-certs \
+            build/app/outputs/flutter-apk/app-release.apk
 
       - name: Prepare Android release files
         shell: bash
@@ -113,6 +174,11 @@ jobs:
             release/GhostNet-Cyber-VPN.apk
           python tools/create_update_manifest.py \
             --output release/version.json
+
+      - name: Remove Android signing key
+        if: always()
+        shell: bash
+        run: rm -f android/app/ghostnet-release.jks
 
       - name: Upload Android artifact
         uses: actions/upload-artifact@v6

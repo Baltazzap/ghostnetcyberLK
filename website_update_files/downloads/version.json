@@ -1,9 +1,9 @@
 {
-  "version": "1.0.4",
-  "build": 5,
+  "version": "1.0.5",
+  "build": 6,
   "mandatory": false,
   "title": "Доступно обновление GhostNet Cyber VPN",
-  "message": "Добавлен полноценный Windows-установщик с ярлыками, удалением приложения и автоматической регистрацией возврата из оплаты.",
+  "message": "Добавлена постоянная цифровая подпись Android APK и поддержка Authenticode-подписи Windows-приложения и установщика.",
   "published_at": "16.07.2026",
   "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN.apk",
   "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup.exe"

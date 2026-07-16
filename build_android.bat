@@ -7,6 +7,7 @@ flutter create --platforms=android,windows --org ru.ghostnet . || goto :error
 
 echo Applying Android security and application patches...
 python tools\patch_app_name.py || goto :error
+python tools\patch_android_signing.py || goto :error
 python tools\patch_windows_title.py || goto :error
 
 echo Installing dependencies...
