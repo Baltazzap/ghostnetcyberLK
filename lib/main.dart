@@ -1483,9 +1483,10 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final showAdmin = widget.profile.isAdmin || widget.profile.isSupport;
     final pages = [
-      HomePage(profile: widget.profile, onOpenTariffs: () => setState(() => _index = 1), onOpenAccount: () => setState(() => _index = 2), onOpenSupport: () => setState(() => _index = 3), onOpenNews: () => openExternal(newsUrl)),
+      HomePage(profile: widget.profile, onOpenTariffs: () => setState(() => _index = 1), onOpenAccount: () => setState(() => _index = 2), onOpenGuide: () => setState(() => _index = 3), onOpenSupport: () => setState(() => _index = 4), onOpenNews: () => openExternal(newsUrl)),
       TariffsPage(profile: widget.profile, onOpenAccount: () => setState(() => _index = 2)),
-      AccountPage(profile: widget.profile, onLogout: widget.onLogout, onOpenTariffs: () => setState(() => _index = 1), onOpenSupport: () => setState(() => _index = 3)),
+      AccountPage(profile: widget.profile, onLogout: widget.onLogout, onOpenTariffs: () => setState(() => _index = 1), onOpenSupport: () => setState(() => _index = 4)),
+      InstructionsPage(profile: widget.profile, onOpenAccount: () => setState(() => _index = 2), onOpenTariffs: () => setState(() => _index = 1)),
       HelpPage(profile: widget.profile),
       if (showAdmin) AdminPage(profile: widget.profile),
     ];
@@ -1519,10 +1520,11 @@ class HomePage extends StatelessWidget {
   final UserProfile profile;
   final VoidCallback onOpenTariffs;
   final VoidCallback onOpenAccount;
+  final VoidCallback onOpenGuide;
   final VoidCallback onOpenSupport;
   final VoidCallback onOpenNews;
 
-  const HomePage({super.key, required this.profile, required this.onOpenTariffs, required this.onOpenAccount, required this.onOpenSupport, required this.onOpenNews});
+  const HomePage({super.key, required this.profile, required this.onOpenTariffs, required this.onOpenAccount, required this.onOpenGuide, required this.onOpenSupport, required this.onOpenNews});
 
   @override
   Widget build(BuildContext context) {
@@ -1534,7 +1536,7 @@ class HomePage extends StatelessWidget {
           const SizedBox(height: 18),
           HomeHeroCard(profile: profile, onOpenTariffs: onOpenTariffs, onOpenAccount: onOpenAccount),
           const SizedBox(height: 16),
-          QuickActionsGrid(onOpenTariffs: onOpenTariffs, onOpenAccount: onOpenAccount, onOpenSupport: onOpenSupport, onOpenNews: onOpenNews),
+          QuickActionsGrid(onOpenTariffs: onOpenTariffs, onOpenAccount: onOpenAccount, onOpenGuide: onOpenGuide, onOpenSupport: onOpenSupport, onOpenNews: onOpenNews),
           const SizedBox(height: 16),
           const StatsGrid(),
           const SizedBox(height: 18),
@@ -2290,6 +2292,133 @@ class _ReferralMiniStat extends StatelessWidget {
         const SizedBox(width: 5),
         Text(label, style: const TextStyle(color: GhostColors.muted, fontWeight: FontWeight.w700, fontSize: 11)),
       ]),
+    );
+  }
+}
+
+
+class InstructionsPage extends StatelessWidget {
+  final UserProfile profile;
+  final VoidCallback onOpenAccount;
+  final VoidCallback onOpenTariffs;
+
+  const InstructionsPage({super.key, required this.profile, required this.onOpenAccount, required this.onOpenTariffs});
+
+  @override
+  Widget build(BuildContext context) {
+    return PageWrap(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          HeaderBar(profile: profile),
+          const SizedBox(height: 18),
+          const PageTitle(title: 'Как подключиться', subtitle: 'Скопируйте ссылку подписки из кабинета и добавьте её в удобный VPN-клиент.'),
+          const SizedBox(height: 16),
+          PremiumCard(
+            highlighted: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const MiniBadge(text: 'БЫСТРЫЙ СТАРТ'),
+                const SizedBox(height: 12),
+                const Text('Сначала получите ключ в кабинете', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                const Text('После покупки или пробного доступа откройте «Мои ключи» и скопируйте ссылку подписки. Она подойдёт для Hiddify, Happ, v2RayTun, V2Box и других клиентов.', style: TextStyle(color: GhostColors.muted, height: 1.45)),
+                const SizedBox(height: 16),
+                Wrap(spacing: 10, runSpacing: 10, children: [
+                  PrimaryButton(text: 'Мои ключи', icon: Icons.vpn_key_rounded, onPressed: onOpenAccount),
+                  SecondaryButton(text: 'Приобрести подписку', icon: Icons.shopping_cart_rounded, onPressed: onOpenTariffs),
+                ]),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(builder: (context, constraints) {
+            final columns = constraints.maxWidth > 900 ? 3 : constraints.maxWidth > 620 ? 2 : 1;
+            final width = (constraints.maxWidth - 12 * (columns - 1)) / columns;
+            final cards = const [
+              GuidePlatformCard(
+                icon: Icons.android_rounded,
+                title: 'Android',
+                client: 'Hiddify / Happ / v2RayTun',
+                steps: ['Скопируйте ссылку подписки', 'Откройте VPN-клиент и нажмите +', 'Выберите импорт из буфера / URL', 'Сохраните профиль и подключитесь'],
+              ),
+              GuidePlatformCard(
+                icon: Icons.desktop_windows_rounded,
+                title: 'Windows',
+                client: 'Hiddify Desktop',
+                steps: ['Скопируйте ссылку подписки', 'Откройте Hiddify', 'Нажмите Новый профиль', 'Вставьте ссылку и подключитесь'],
+              ),
+              GuidePlatformCard(
+                icon: Icons.phone_iphone_rounded,
+                title: 'iPhone / iOS',
+                client: 'V2Box / Streisand',
+                steps: ['Скопируйте ссылку подписки', 'Откройте клиент', 'Добавьте подписку по URL', 'Выберите сервер и включите VPN'],
+              ),
+            ];
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: cards.map((card) => SizedBox(width: width, child: card)).toList(),
+            );
+          }),
+          const SizedBox(height: 16),
+          PremiumCard(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
+              MiniBadge(text: 'ВАЖНО'),
+              SizedBox(height: 12),
+              Text('Если серверы не появились', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              SizedBox(height: 8),
+              Text('Обновите подписку в VPN-клиенте вручную: профиль GhostNet → Обновить / Refresh subscription. Старую ссылку удалять не нужно, если она уже добавлена.', style: TextStyle(color: GhostColors.muted, height: 1.45)),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class GuidePlatformCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String client;
+  final List<String> steps;
+
+  const GuidePlatformCard({super.key, required this.icon, required this.title, required this.client, required this.steps});
+
+  @override
+  Widget build(BuildContext context) {
+    return PremiumCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            CircleIcon(icon: icon),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 3),
+              Text(client, style: const TextStyle(color: GhostColors.orangeSoft, fontWeight: FontWeight.w800)),
+            ])),
+          ]),
+          const SizedBox(height: 14),
+          ...List.generate(steps.length, (i) => Padding(
+            padding: const EdgeInsets.only(bottom: 9),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: GhostColors.orange.withOpacity(.14), borderRadius: BorderRadius.circular(999), border: Border.all(color: GhostColors.orange.withOpacity(.28))),
+                child: Text('${i + 1}', style: const TextStyle(color: GhostColors.orangeSoft, fontWeight: FontWeight.w900, fontSize: 12)),
+              ),
+              const SizedBox(width: 9),
+              Expanded(child: Text(steps[i], style: const TextStyle(color: GhostColors.muted, height: 1.35, fontWeight: FontWeight.w700))),
+            ]),
+          )),
+        ],
+      ),
     );
   }
 }
@@ -4093,7 +4222,7 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
             children: [
               Row(
                 children: [
-                  MiniBadge(text: active ? 'ПРЕМИУМ-ДАШБОРД' : 'GHOSTNET DASHBOARD'),
+                  MiniBadge(text: 'GHOSTNET DASHBOARD'),
                   const Spacer(),
                   IconButton(
                     tooltip: 'Обновить',
@@ -4248,8 +4377,7 @@ class PremiumDashboardSideCard extends StatelessWidget {
           StatusLine(label: 'Тариф', value: plan),
           const SizedBox(height: 10),
           StatusLine(label: 'До', value: expires),
-          const SizedBox(height: 10),
-          StatusLine(label: 'Серверы', value: servers),
+
         ],
       ),
     );
@@ -4306,24 +4434,29 @@ class StatusLine extends StatelessWidget {
 class QuickActionsGrid extends StatelessWidget {
   final VoidCallback onOpenTariffs;
   final VoidCallback onOpenAccount;
+  final VoidCallback onOpenGuide;
   final VoidCallback onOpenSupport;
   final VoidCallback onOpenNews;
 
-  const QuickActionsGrid({super.key, required this.onOpenTariffs, required this.onOpenAccount, required this.onOpenSupport, required this.onOpenNews});
+  const QuickActionsGrid({super.key, required this.onOpenTariffs, required this.onOpenAccount, required this.onOpenGuide, required this.onOpenSupport, required this.onOpenNews});
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth > 720;
         final items = [
-          ActionCard(icon: Icons.vpn_key_rounded, title: 'Мои ключи', text: 'Открыть кабинет', onTap: onOpenAccount),
-          ActionCard(icon: Icons.local_offer_rounded, title: 'Промокоды', text: 'WELCOME', onTap: onOpenTariffs),
+          ActionCard(icon: Icons.vpn_key_rounded, title: 'Мои ключи', text: 'Скопировать подписку', onTap: onOpenAccount),
+          ActionCard(icon: Icons.local_offer_rounded, title: 'Тарифы', text: 'Оплата и промокод', onTap: onOpenTariffs),
+          ActionCard(icon: Icons.menu_book_rounded, title: 'Инструкция', text: 'Как подключиться', onTap: onOpenGuide),
           ActionCard(icon: Icons.newspaper_rounded, title: 'Новости', text: 'Канал GhostNet', onTap: onOpenNews),
           ActionCard(icon: Icons.support_agent_rounded, title: 'Поддержка', text: 'Чат в приложении', onTap: onOpenSupport),
         ];
-        if (!wide) return Column(children: items.map((e) => Padding(padding: const EdgeInsets.only(bottom: 12), child: e)).toList());
-        return Row(children: items.map((e) => Expanded(child: Padding(padding: const EdgeInsets.only(right: 12), child: e))).toList());
+        final columns = constraints.maxWidth > 1100 ? 5 : constraints.maxWidth > 820 ? 3 : constraints.maxWidth > 520 ? 2 : 1;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: items.map((e) => SizedBox(width: (constraints.maxWidth - 12 * (columns - 1)) / columns, child: e)).toList(),
+        );
       },
     );
   }
@@ -4484,34 +4617,48 @@ class AdminCompactStatsLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      _AdminStatItem(Icons.people_rounded, '${overview.users}', 'Юзеры'),
-      _AdminStatItem(Icons.vpn_key_rounded, '${overview.activeSubscriptions}', 'Ключи'),
-      _AdminStatItem(Icons.payment_rounded, '${overview.payments}', 'Оплаты'),
-      _AdminStatItem(Icons.support_agent_rounded, '${overview.ticketsOpen}', 'Тикеты'),
+      _AdminStatItem(Icons.people_rounded, '${overview.users}', 'Пользователи'),
+      _AdminStatItem(Icons.vpn_key_rounded, '${overview.activeSubscriptions}', 'Активные ключи'),
+      _AdminStatItem(Icons.payment_rounded, '${overview.payments}', 'Платежи'),
+      _AdminStatItem(Icons.local_activity_rounded, '${overview.ticketsOpen}', 'Поддержка'),
+      _AdminStatItem(Icons.confirmation_number_rounded, '${overview.promocodesActive}', 'Промокоды'),
     ];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: items.map((item) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: Container(
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.035),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: GhostColors.orange.withOpacity(.20)),
+    return PremiumCard(
+      padding: const EdgeInsets.all(12),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth > 920 ? 5 : constraints.maxWidth > 620 ? 3 : 2;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: items.map((item) => SizedBox(
+            width: (constraints.maxWidth - 10 * (columns - 1)) / columns,
+            child: Container(
+              height: 64,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(.22),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: GhostColors.orange.withOpacity(.20)),
+              ),
+              child: Row(children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: GhostColors.orange.withOpacity(.13), borderRadius: BorderRadius.circular(12)),
+                  child: Icon(item.icon, color: GhostColors.orange, size: 19),
+                ),
+                const SizedBox(width: 9),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Text(item.value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: GhostColors.orangeSoft, fontWeight: FontWeight.w900, fontSize: 18)),
+                  const SizedBox(height: 1),
+                  Text(item.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: GhostColors.muted, fontWeight: FontWeight.w800, fontSize: 11)),
+                ])),
+              ]),
             ),
-            child: Row(children: [
-              Icon(item.icon, color: GhostColors.orange, size: 18),
-              const SizedBox(width: 7),
-              Text(item.value, style: const TextStyle(color: GhostColors.orangeSoft, fontWeight: FontWeight.w900, fontSize: 15)),
-              const SizedBox(width: 5),
-              Text(item.label, style: const TextStyle(color: GhostColors.muted, fontWeight: FontWeight.w700, fontSize: 11)),
-            ]),
-          ),
-        )).toList(),
-      ),
+          )).toList(),
+        );
+      }),
     );
   }
 }
@@ -4666,65 +4813,85 @@ class TariffCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final features = _tariffFeatures(tariff.code);
+    final ribbon = _tariffRibbon(tariff);
     return PremiumCard(
       highlighted: tariff.highlighted,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: GhostColors.orange.withOpacity(.12),
-                  borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: GhostColors.orange.withOpacity(.24)),
-                ),
-                child: Icon(_tariffIconData(tariff.code), color: GhostColors.orange, size: 23),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 50,
+              height: 50,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [GhostColors.orange.withOpacity(.18), GhostColors.gold.withOpacity(.10)]),
+                borderRadius: BorderRadius.circular(17),
+                border: Border.all(color: GhostColors.orange.withOpacity(.28)),
+                boxShadow: [BoxShadow(color: GhostColors.orange.withOpacity(.12), blurRadius: 20)],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(child: Text(tariff.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900))),
-                        if (tariff.badge != null) MiniBadge(text: tariff.badge!),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(tariff.subtitle, style: const TextStyle(color: GhostColors.muted, height: 1.35)),
-                  ],
-                ),
-              ),
-            ],
+              child: Icon(_tariffIconData(tariff.code), color: GhostColors.orangeSoft, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(child: Text(tariff.name, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900))),
+                if (ribbon != null) MiniBadge(text: ribbon),
+              ]),
+              const SizedBox(height: 5),
+              Text(tariff.subtitle, style: const TextStyle(color: GhostColors.muted, height: 1.35)),
+            ])),
+          ]),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.black.withOpacity(.22), borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.white.withOpacity(.06))),
+            child: Row(children: [
+              Expanded(child: RichText(text: TextSpan(children: [
+                TextSpan(text: '${tariff.price} ₽', style: const TextStyle(fontSize: 30, color: GhostColors.orangeSoft, fontWeight: FontWeight.w900)),
+                TextSpan(text: ' / ${tariff.period}', style: const TextStyle(color: GhostColors.muted, fontWeight: FontWeight.w800)),
+              ]))),
+              PrimaryButton(text: 'Купить', icon: Icons.payment_rounded, onPressed: onBuy),
+            ]),
           ),
-          const SizedBox(height: 18),
-          Container(height: 1, color: Colors.white.withOpacity(.07)),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(text: '${tariff.price} ₽', style: const TextStyle(fontSize: 28, color: GhostColors.orangeSoft, fontWeight: FontWeight.w900)),
-                      TextSpan(text: '  / ${tariff.period}', style: const TextStyle(color: GhostColors.muted, fontWeight: FontWeight.w800)),
-                    ],
-                  ),
-                ),
-              ),
-              PrimaryButton(text: 'Оплатить', icon: Icons.payment_rounded, onPressed: onBuy),
-            ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: features.map((feature) => FeaturePill(icon: feature.icon, text: feature.text)).toList(),
           ),
         ],
       ),
     );
   }
+}
+
+class _TariffFeature {
+  final IconData icon;
+  final String text;
+  const _TariffFeature(this.icon, this.text);
+}
+
+List<_TariffFeature> _tariffFeatures(String code) {
+  final base = <_TariffFeature>[
+    const _TariffFeature(Icons.devices_rounded, '3 устройства'),
+    const _TariffFeature(Icons.all_inclusive_rounded, 'Безлимит'),
+  ];
+  if (code == 'ghost_start') return [...base, const _TariffFeature(Icons.bolt_rounded, 'Быстрый старт')];
+  if (code == 'ghost_net') return [...base, const _TariffFeature(Icons.star_rounded, 'Популярный')];
+  if (code == 'ghost_plus') return [...base, const _TariffFeature(Icons.savings_rounded, 'Выгодно')];
+  if (code == 'ghost_premium') return [...base, const _TariffFeature(Icons.workspace_premium_rounded, 'Премиум')];
+  if (code == 'ghost_ultimate') return [...base, const _TariffFeature(Icons.diamond_rounded, 'Максимум')];
+  return base;
+}
+
+String? _tariffRibbon(Tariff tariff) {
+  if (tariff.badge != null) return tariff.badge;
+  if (tariff.code == 'ghost_plus') return 'ВЫГОДНО';
+  if (tariff.code == 'ghost_premium') return 'ПРЕМИУМ';
+  return null;
 }
 
 class AccountHero extends StatelessWidget {
@@ -4985,6 +5152,7 @@ class GhostBottomNav extends StatelessWidget {
         const NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Главная'),
         const NavigationDestination(icon: Icon(Icons.local_offer_rounded), label: 'Тарифы'),
         const NavigationDestination(icon: Icon(Icons.person_rounded), label: 'Кабинет'),
+        const NavigationDestination(icon: Icon(Icons.menu_book_rounded), label: 'Инструкция'),
         const NavigationDestination(icon: Icon(Icons.help_rounded), label: 'Помощь'),
         if (showAdmin) const NavigationDestination(icon: Icon(Icons.admin_panel_settings_rounded), label: 'Админ'),
       ],
@@ -5005,6 +5173,7 @@ class GhostSideBar extends StatelessWidget {
       const _MenuItem(Icons.home_rounded, 'Главная'),
       const _MenuItem(Icons.local_offer_rounded, 'Тарифы'),
       const _MenuItem(Icons.person_rounded, 'Кабинет'),
+      const _MenuItem(Icons.menu_book_rounded, 'Инструкция'),
       const _MenuItem(Icons.help_rounded, 'Помощь'),
       if (showAdmin) const _MenuItem(Icons.admin_panel_settings_rounded, 'Админ'),
     ];
