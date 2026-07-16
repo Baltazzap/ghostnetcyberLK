@@ -1,10 +1,24 @@
 {
-  "version": "1.0.4",
-  "build": 5,
+  "schema": 2,
+  "release_id": "1.0.7-8",
+  "version": "1.0.7",
+  "build": 8,
   "mandatory": false,
   "title": "Доступно обновление GhostNet Cyber VPN",
-  "message": "Описание изменений следующей версии.",
+  "message": "Описание следующего обновления.",
   "published_at": "ДД.ММ.ГГГГ",
-  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN.apk",
-  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup.exe"
+  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.7-8.apk",
+  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.7-8.exe",
+  "android": {
+    "version": "1.0.7",
+    "build": 8,
+    "filename": "GhostNet-Cyber-VPN-1.0.7-8.apk",
+    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.7-8.apk"
+  },
+  "windows": {
+    "version": "1.0.7",
+    "build": 8,
+    "filename": "GhostNet-Cyber-VPN-Setup-1.0.7-8.exe",
+    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.7-8.exe"
+  }
 }

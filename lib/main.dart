@@ -155,17 +155,34 @@ class AppUpdateInfo {
   String get releaseId => '$version+$build';
 
   factory AppUpdateInfo.fromJson(Map<String, dynamic> json) {
-    final rawBuild = json['build'];
+    final platformKey = Platform.isWindows ? 'windows' : 'android';
+    final platformRaw = json[platformKey];
+    final platform = platformRaw is Map
+        ? Map<String, dynamic>.from(platformRaw)
+        : <String, dynamic>{};
+
+    final rawBuild = platform['build'] ?? json['build'];
     final build = rawBuild is num
         ? rawBuild.toInt()
         : int.tryParse(rawBuild?.toString() ?? '') ?? 0;
 
-    final downloadUrl = Platform.isWindows
+    final legacyUrl = Platform.isWindows
         ? json['windows_url']?.toString() ?? ''
         : json['android_url']?.toString() ?? '';
 
+    final downloadUrl =
+        platform['url']?.toString().trim().isNotEmpty == true
+        ? platform['url'].toString().trim()
+        : legacyUrl.trim();
+
+    final platformVersion =
+        platform['version']?.toString().trim() ?? '';
+    final version = platformVersion.isNotEmpty
+        ? platformVersion
+        : json['version']?.toString().trim() ?? '';
+
     return AppUpdateInfo(
-      version: json['version']?.toString().trim() ?? '',
+      version: version,
       build: build,
       title: json['title']?.toString().trim().isNotEmpty == true
           ? json['title'].toString().trim()
@@ -173,7 +190,7 @@ class AppUpdateInfo {
       message: json['message']?.toString().trim().isNotEmpty == true
           ? json['message'].toString().trim()
           : 'Установите новую версию приложения.',
-      downloadUrl: downloadUrl.trim(),
+      downloadUrl: downloadUrl,
       publishedAt: json['published_at']?.toString().trim() ?? '',
       mandatory: json['mandatory'] == true,
     );
@@ -211,6 +228,14 @@ class AppUpdateService {
       }
 
       final currentBuild = int.tryParse(packageInfo.buildNumber) ?? 0;
+
+      debugPrint(
+        '[GhostNet Update] installed='
+        '${packageInfo.version}+$currentBuild, '
+        'server=${update.version}+${update.build}, '
+        'url=${update.downloadUrl}',
+      );
+
       final isNewer = _isNewer(
         currentVersion: packageInfo.version,
         currentBuild: currentBuild,

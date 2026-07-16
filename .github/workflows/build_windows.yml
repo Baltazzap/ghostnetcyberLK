@@ -231,10 +231,32 @@ jobs:
             -CertificatePath $env:WINDOWS_CERTIFICATE_PATH `
             -CertificatePassword $env:WINDOWS_CERTIFICATE_PASSWORD
 
+      - name: Create versioned Windows installer
+        shell: powershell
+        run: |
+          $installerName = python tools/release_info.py `
+            --field windows-filename
+
+          $source = "release\GhostNet-Cyber-VPN-Setup.exe"
+          $target = Join-Path "release" $installerName
+
+          Copy-Item `
+            -Path $source `
+            -Destination $target `
+            -Force
+
+          "WINDOWS_VERSIONED_INSTALLER=$target" |
+            Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 `
+              -Append
+
+          Write-Host "Windows release file: $target"
+
       - name: Report Windows signature status
         shell: powershell
         run: |
-          $installer = "release\GhostNet-Cyber-VPN-Setup.exe"
+          $installer = $env:WINDOWS_VERSIONED_INSTALLER
           $signature = Get-AuthenticodeSignature $installer
 
           Write-Host "Signature status: $($signature.Status)"
@@ -248,12 +270,16 @@ jobs:
           }
 
       - name: Create Windows update manifest
-        run: python tools/create_update_manifest.py --output release/version.json
+        shell: powershell
+        run: |
+          python tools/create_update_manifest.py `
+            --output release/version.json `
+            --windows-file $env:WINDOWS_VERSIONED_INSTALLER
 
       - name: Verify Windows installer
         shell: powershell
         run: |
-          $installer = "release\GhostNet-Cyber-VPN-Setup.exe"
+          $installer = $env:WINDOWS_VERSIONED_INSTALLER
 
           if (-not (Test-Path $installer)) {
             throw "Windows installer was not created."
@@ -280,5 +306,5 @@ jobs:
         with:
           name: GhostNet-Cyber-VPN-Windows-Installer
           path: |
-            release/GhostNet-Cyber-VPN-Setup.exe
+            release/GhostNet-Cyber-VPN-Setup-*.exe
             release/version.json

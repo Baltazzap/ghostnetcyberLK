@@ -214,10 +214,18 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
+
+          APK_NAME=$(python tools/release_info.py \
+            --field android-filename)
+
           cp build/app/outputs/flutter-apk/app-release.apk \
-            release/GhostNet-Cyber-VPN.apk
+            "release/$APK_NAME"
+
           python tools/create_update_manifest.py \
-            --output release/version.json
+            --output release/version.json \
+            --android-file "release/$APK_NAME"
+
+          echo "Android release file: $APK_NAME"
 
       - name: Remove Android signing key
         if: always()
@@ -229,5 +237,5 @@ jobs:
         with:
           name: GhostNet-Cyber-VPN-Android-Release
           path: |
-            release/GhostNet-Cyber-VPN.apk
+            release/*.apk
             release/version.json
