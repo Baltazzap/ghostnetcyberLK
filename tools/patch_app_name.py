@@ -31,7 +31,7 @@ if 'android:label=' in text:
 else:
     text = text.replace("<application", '<application android:label="@string/app_name"', 1)
 
-# Для тестового API по http://IP:8000 на Android нужен интернет и cleartext-трафик.
+# Интернет нужен, но незашифрованный HTTP для релиза запрещён.
 if 'android.permission.INTERNET' not in text:
     text = re.sub(r'(<manifest[^>]*>)', r'\1\n    <uses-permission android:name="android.permission.INTERNET"/>', text, count=1)
 
@@ -52,9 +52,15 @@ text = _add_app_meta(text, 'com.google.firebase.messaging.default_notification_i
 text = _add_app_meta(text, 'com.google.firebase.messaging.default_notification_color', 'resource', '@color/ghostnet_orange')
 
 if 'android:usesCleartextTraffic=' in text:
-    text = re.sub(r'android:usesCleartextTraffic="[^"]*"', 'android:usesCleartextTraffic="true"', text)
+    text = re.sub(r'android:usesCleartextTraffic="[^"]*"', 'android:usesCleartextTraffic="false"', text)
 else:
-    text = text.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
+    text = text.replace("<application", '<application android:usesCleartextTraffic="false"', 1)
+
+
+if 'android:allowBackup=' in text:
+    text = re.sub(r'android:allowBackup="[^"]*"', 'android:allowBackup="false"', text)
+else:
+    text = text.replace("<application", '<application android:allowBackup="false"', 1)
 
 # Deep link для возврата из ЮKassa обратно в приложение: ghostnet://payment-result?payment_id=...
 deep_link_filter = """
@@ -201,6 +207,20 @@ def _patch_app_gradle(path: Path):
     if not path.exists():
         return
     g = path.read_text(encoding="utf-8")
+
+
+    if path.suffix == ".kts":
+        g = re.sub(
+            r'minSdk\s*=\s*(?:flutter\.minSdkVersion|\d+)',
+            'minSdk = 23',
+            g,
+        )
+    else:
+        g = re.sub(
+            r'minSdkVersion\s+(?:flutter\.minSdkVersion|\d+)',
+            'minSdkVersion 23',
+            g,
+        )
 
     if "com.google.gms.google-services" not in g:
         if "plugins {" in g:

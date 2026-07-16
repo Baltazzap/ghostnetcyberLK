@@ -20,8 +20,29 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.44.0"
           channel: stable
           cache: true
+
+
+      - name: Ensure Visual C++ ATL is installed
+        shell: powershell
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $installPath) { throw "Visual Studio installation was not found." }
+          $arguments = @(
+            "modify",
+            "--installPath", $installPath,
+            "--add", "Microsoft.VisualStudio.Component.VC.ATL",
+            "--quiet",
+            "--norestart"
+          )
+          $process = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
+            throw "ATL installation failed with code $($process.ExitCode)"
+          }
 
       - name: Flutter doctor
         run: flutter doctor -v
@@ -45,6 +66,19 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+
+      - name: Verify security patch
+        run: python tools/security_check.py
+
+      - name: Format Dart source
+        run: dart format lib/main.dart
+
+      - name: Analyze project
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Run tests
+        run: flutter test
 
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons

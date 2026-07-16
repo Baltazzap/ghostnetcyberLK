@@ -1,5 +1,5 @@
 name: ghostnet_cyber_vpn
-version: 1.0.0+1
+version: 1.0.1+2
 publish_to: "none"
 
 description: GhostNet Cyber VPN storefront app for Windows and Android.
@@ -13,6 +13,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.2.2
   shared_preferences: ^2.3.2
+  flutter_secure_storage: 10.3.1
   url_launcher: ^6.3.1
   flutter_local_notifications: ^17.2.4
   firebase_messaging: ^15.2.10

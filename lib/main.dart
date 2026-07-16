@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, SocketException;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -84,6 +85,46 @@ const String _tokenKey = 'ghostnet_access_token';
 const String _pendingPaymentKey = 'ghostnet_pending_payment_id';
 const String _pushChannelId = 'ghostnet_notifications';
 const String _pushChannelName = 'GhostNet уведомления';
+
+
+class AuthTokenStorage {
+  static final FlutterSecureStorage _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(migrateWithBackup: true),
+  );
+
+  static Future<String?> read() async {
+    final secureToken = await _storage.read(key: _tokenKey);
+    if (secureToken != null && secureToken.isNotEmpty) {
+      return secureToken;
+    }
+
+    // Однократный перенос старого токена из SharedPreferences.
+    final prefs = await SharedPreferences.getInstance();
+    final legacyToken = prefs.getString(_tokenKey);
+    if (legacyToken == null || legacyToken.isEmpty) {
+      return null;
+    }
+
+    await _storage.write(key: _tokenKey, value: legacyToken);
+    await prefs.remove(_tokenKey);
+    return legacyToken;
+  }
+
+  static Future<void> write(String token) async {
+    await _storage.write(key: _tokenKey, value: token);
+
+    // Удаляем старую незашифрованную копию, если она осталась.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+  }
+
+  static Future<void> delete() async {
+    await _storage.delete(key: _tokenKey);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+  }
+}
 
 class PushService {
   static final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
@@ -216,6 +257,21 @@ class ApiException implements Exception {
 
 class GhostApi {
   static Uri _uri(String path) => Uri.parse('$apiBaseUrl$path');
+  static const Duration _requestTimeout = Duration(seconds: 15);
+
+  static Future<http.Response> _send(Future<http.Response> request) async {
+    try {
+      return await request.timeout(_requestTimeout);
+    } on TimeoutException {
+      throw const ApiException(
+        'Сервер не ответил за 15 секунд. Попробуйте ещё раз.',
+      );
+    } on SocketException {
+      throw const ApiException('Нет подключения к интернету.');
+    } on http.ClientException {
+      throw const ApiException('Ошибка сетевого подключения.');
+    }
+  }
 
   static Map<String, String> _headers([String? token]) {
     return {
@@ -239,7 +295,13 @@ class GhostApi {
   }
 
   static Future<Map<String, dynamic>> _post(String path, Map<String, dynamic> body, {String? token}) async {
-    final response = await http.post(_uri(path), headers: _headers(token), body: jsonEncode(body));
+    final response = await _send(
+      http.post(
+        _uri(path),
+        headers: _headers(token),
+        body: jsonEncode(body),
+      ),
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(_errorFrom(response));
     }
@@ -249,7 +311,13 @@ class GhostApi {
   }
 
   static Future<Map<String, dynamic>> _put(String path, Map<String, dynamic> body, {String? token}) async {
-    final response = await http.put(_uri(path), headers: _headers(token), body: jsonEncode(body));
+    final response = await _send(
+      http.put(
+        _uri(path),
+        headers: _headers(token),
+        body: jsonEncode(body),
+      ),
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(_errorFrom(response));
     }
@@ -259,7 +327,9 @@ class GhostApi {
   }
 
   static Future<dynamic> _get(String path, {String? token}) async {
-    final response = await http.get(_uri(path), headers: _headers(token));
+    final response = await _send(
+      http.get(_uri(path), headers: _headers(token)),
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(_errorFrom(response));
     }
@@ -267,7 +337,9 @@ class GhostApi {
   }
 
   static Future<dynamic> _delete(String path, {String? token}) async {
-    final response = await http.delete(_uri(path), headers: _headers(token));
+    final response = await _send(
+      http.delete(_uri(path), headers: _headers(token)),
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(_errorFrom(response));
     }
@@ -286,7 +358,6 @@ class GhostApi {
       'email': email,
       'password': password,
       'telegram_username': telegram.isEmpty ? null : telegram,
-      'telegram_id': telegram.isEmpty ? null : telegram,
     });
     return data['access_token'].toString();
   }
@@ -1008,7 +1079,7 @@ class UserProfile {
       telegram: telegram.isEmpty ? 'Telegram не указан' : telegram,
       token: token,
       isActive: json['is_active'] == true,
-      isAdmin: json['is_admin'] == true || email.toLowerCase() == 'baltazzap@gmail.com' || telegram.toLowerCase().replaceAll('@', '') == 'baltazzap',
+      isAdmin: json['is_admin'] == true,
       isSupport: json['is_support'] == true,
     );
   }
@@ -1084,10 +1155,11 @@ class _AppBootstrapState extends State<AppBootstrap> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(_tokenKey);
+    final token = await AuthTokenStorage.read();
     if (token == null || token.isEmpty) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
       return;
     }
 
@@ -1100,7 +1172,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
         _loading = false;
       });
     } catch (_) {
-      await prefs.remove(_tokenKey);
+      await AuthTokenStorage.delete();
       if (!mounted) return;
       setState(() {
         _profile = null;
@@ -1111,27 +1183,29 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
   Future<void> _login(String email, String password) async {
     final token = await GhostApi.login(email: email, password: password);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
     final profile = await GhostApi.me(token);
+    await AuthTokenStorage.write(token);
     unawaited(PushService.registerForUser(token));
     if (!mounted) return;
     setState(() => _profile = profile);
   }
 
   Future<void> _register(String email, String password, String telegram) async {
-    final token = await GhostApi.register(email: email, password: password, telegramUsername: telegram);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
+    final token = await GhostApi.register(
+      email: email,
+      password: password,
+      telegramUsername: telegram,
+    );
     final profile = await GhostApi.me(token);
+    await AuthTokenStorage.write(token);
     unawaited(PushService.registerForUser(token));
     if (!mounted) return;
     setState(() => _profile = profile);
   }
 
   Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
+    await AuthTokenStorage.delete();
+    if (!mounted) return;
     setState(() => _profile = null);
   }
 

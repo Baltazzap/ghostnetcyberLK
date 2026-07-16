@@ -26,6 +26,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.44.0"
           channel: stable
           cache: true
 
@@ -57,18 +58,40 @@ jobs:
             GOOGLE_SERVICES_FILE="$GITHUB_WORKSPACE/app/google-services.json"
           fi
 
+          if [ -z "$GOOGLE_SERVICES_FILE" ] && [ -n "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" ]; then
+            echo "Restoring google-services.json from GitHub secret."
+            mkdir -p android/app
+            echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 --decode > android/app/google-services.json
+            GOOGLE_SERVICES_FILE="android/app/google-services.json"
+          fi
+
           if [ -z "$GOOGLE_SERVICES_FILE" ]; then
             echo "google-services.json not found"
-            echo "Put Firebase Android config either near pubspec.yaml or to app/google-services.json."
+            echo "Put it near pubspec.yaml, to app/google-services.json, or create GOOGLE_SERVICES_JSON_BASE64 secret."
             exit 1
           fi
 
           echo "Using Firebase config: $GOOGLE_SERVICES_FILE"
           mkdir -p android/app
-          cp "$GOOGLE_SERVICES_FILE" android/app/google-services.json
+          if [ "$GOOGLE_SERVICES_FILE" != "android/app/google-services.json" ]; then
+            cp "$GOOGLE_SERVICES_FILE" android/app/google-services.json
+          fi
 
       - name: Install dependencies
         run: flutter pub get
+
+
+      - name: Verify security patch
+        run: python tools/security_check.py
+
+      - name: Format Dart source
+        run: dart format lib/main.dart
+
+      - name: Analyze project
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Run tests
+        run: flutter test
 
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons

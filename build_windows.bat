@@ -1,14 +1,38 @@
 @echo off
+setlocal
 cd /d %~dp0
-echo Creating Android/Windows platform files if missing...
-flutter create --platforms=android,windows --org ru.ghostnet .
+
+echo Creating Android and Windows platform files if missing...
+flutter create --platforms=android,windows --org ru.ghostnet . || goto :error
+
+echo Applying application patches...
+python tools\patch_app_name.py || goto :error
+python tools\patch_windows_title.py || goto :error
+
 echo Installing dependencies...
-flutter pub get
+flutter pub get || goto :error
+
+echo Running security checks...
+python tools\security_check.py || goto :error
+
+echo Formatting and analyzing project...
+dart format lib\main.dart || goto :error
+flutter analyze --no-fatal-infos --no-fatal-warnings || goto :error
+
 echo Generating launcher icons...
-dart run flutter_launcher_icons
+dart run flutter_launcher_icons || goto :error
+
 echo Building Windows app...
-flutter build windows --release
+flutter build windows --release || goto :error
+
 echo.
 echo Windows Release folder:
 echo build\windows\x64\runner\Release
 pause
+exit /b 0
+
+:error
+echo.
+echo BUILD FAILED. Error code: %errorlevel%
+pause
+exit /b %errorlevel%
