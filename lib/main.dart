@@ -2659,75 +2659,236 @@ class _ReferralProgramCardState extends State<ReferralProgramCard> {
     final info = _info;
     return PremiumCard(
       highlighted: true,
+      padding: const EdgeInsets.all(12),
       child: _loading
           ? const LinearProgressIndicator(minHeight: 3)
-          : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: const [
-                CircleIcon(icon: Icons.group_add_rounded),
-                SizedBox(width: 12),
-                Expanded(child: Text('Реферальная система', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900))),
-              ]),
-              const SizedBox(height: 10),
-              const Text('Приглашай друзей и получай +7 дней после первой успешной оплаты друга. Промокоды работают отдельно и дают скидку покупателю.', style: TextStyle(color: GhostColors.muted, height: 1.4)),
-              const SizedBox(height: 14),
-              if (info != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.black.withOpacity(.22), borderRadius: BorderRadius.circular(16), border: Border.all(color: GhostColors.orange.withOpacity(.20))),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('Твой код', style: TextStyle(color: GhostColors.muted, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 6),
-                    SelectableText(info.code, style: const TextStyle(color: GhostColors.orangeSoft, fontWeight: FontWeight.w900, fontSize: 22, letterSpacing: 1.2)),
-                    const SizedBox(height: 8),
-                    SelectableText(info.shareUrl, style: const TextStyle(color: GhostColors.text, fontWeight: FontWeight.w700, fontSize: 12)),
-                  ]),
-                ),
-                const SizedBox(height: 12),
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 300),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        PrimaryButton(text: 'Получить код', icon: Icons.copy_rounded, onPressed: () => _copy(info.code, 'Реферальный код скопирован.')),
-                        const SizedBox(height: 10),
-                        PrimaryButton(text: 'Получить ссылку', icon: Icons.link_rounded, onPressed: () => _copy(info.shareUrl, 'Реферальная ссылка скопирована.')),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(children: [
-                    _ReferralMiniStat(icon: Icons.person_add_alt_1_rounded, value: '${info.invitedTotal}', label: 'приглашено'),
-                    _ReferralMiniStat(icon: Icons.payments_rounded, value: '${info.paidTotal}', label: 'оплатили'),
-                    _ReferralMiniStat(icon: Icons.card_giftcard_rounded, value: '+${info.bonusDaysTotal}', label: 'дней'),
-                  ]),
-                ),
-                if ((info.referredByCode ?? '').isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text('Вы пришли по коду ${info.referredByCode}${(info.referredByEmail ?? '').isNotEmpty ? ' от ${info.referredByEmail}' : ''}.', style: const TextStyle(color: GhostColors.success, fontWeight: FontWeight.w800)),
-                ] else if (info.canApplyCode) ...[
-                  const SizedBox(height: 14),
-                  Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 300),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    CircleIcon(icon: Icons.group_add_rounded),
+                    SizedBox(width: 10),
+                    Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          GhostTextField(controller: _code, label: 'Ввести код друга', icon: Icons.confirmation_number_rounded),
-                          const SizedBox(height: 10),
-                          Center(
-                            child: PrimaryButton(text: _saving ? '...' : 'Применить', icon: Icons.check_rounded, onPressed: _saving ? null : _apply),
-                          ),
+                          Text('Реферальная система', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, height: 1.1)),
+                          SizedBox(height: 3),
+                          Text('Приглашай друзей — получай +7 дней.', style: TextStyle(color: GhostColors.muted, fontSize: 12, height: 1.25)),
                         ],
                       ),
                     ),
+                  ],
+                ),
+                if (info != null) ...[
+                  const SizedBox(height: 11),
+                  _ReferralValueRow(
+                    label: 'ТВОЙ КОД',
+                    value: info.code,
+                    accent: true,
+                    icon: Icons.copy_rounded,
+                    tooltip: 'Скопировать код',
+                    onPressed: () => _copy(info.code, 'Реферальный код скопирован.'),
                   ),
+                  const SizedBox(height: 7),
+                  _ReferralValueRow(
+                    label: 'ССЫЛКА',
+                    value: info.shareUrl,
+                    icon: Icons.link_rounded,
+                    tooltip: 'Скопировать ссылку',
+                    onPressed: () => _copy(info.shareUrl, 'Реферальная ссылка скопирована.'),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(child: _ReferralCompactStat(icon: Icons.person_add_alt_1_rounded, value: '${info.invitedTotal}', label: 'Приглашено')),
+                      const SizedBox(width: 6),
+                      Expanded(child: _ReferralCompactStat(icon: Icons.payments_rounded, value: '${info.paidTotal}', label: 'Оплатили')),
+                      const SizedBox(width: 6),
+                      Expanded(child: _ReferralCompactStat(icon: Icons.card_giftcard_rounded, value: '+${info.bonusDaysTotal}', label: 'Дней')),
+                    ],
+                  ),
+                  if ((info.referredByCode ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _ReferralStatusBox(
+                      icon: Icons.verified_rounded,
+                      text: 'Применён код ${info.referredByCode}${(info.referredByEmail ?? '').isNotEmpty ? ' · ${info.referredByEmail}' : ''}',
+                    ),
+                  ] else if (info.canApplyCode) ...[
+                    const SizedBox(height: 9),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final horizontal = constraints.maxWidth >= 380;
+                        final field = GhostTextField(
+                          controller: _code,
+                          label: 'Код друга',
+                          icon: Icons.confirmation_number_rounded,
+                        );
+                        final button = PrimaryButton(
+                          text: _saving ? '...' : 'Применить',
+                          icon: Icons.check_rounded,
+                          onPressed: _saving ? null : _apply,
+                        );
+                        if (horizontal) {
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(child: field),
+                              const SizedBox(width: 8),
+                              button,
+                            ],
+                          );
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            field,
+                            const SizedBox(height: 8),
+                            Center(child: button),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                 ],
               ],
-            ]),
+            ),
+    );
+  }
+}
+
+class _ReferralValueRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final bool accent;
+
+  const _ReferralValueRow({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.accent = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      minHeight: 44,
+      padding: const EdgeInsets.fromLTRB(11, 7, 5, 7),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(.22),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent ? GhostColors.orange.withOpacity(.25) : Colors.white.withOpacity(.07)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(label, style: const TextStyle(color: GhostColors.muted, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: .8)),
+                const SizedBox(height: 3),
+                SelectableText(
+                  value,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: accent ? GhostColors.orangeSoft : GhostColors.text,
+                    fontSize: accent ? 17 : 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: accent ? .8 : 0,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 7),
+          Tooltip(
+            message: tooltip,
+            child: Material(
+              color: GhostColors.orange.withOpacity(.11),
+              borderRadius: BorderRadius.circular(11),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(11),
+                onTap: onPressed,
+                child: SizedBox(width: 36, height: 36, child: Icon(icon, color: GhostColors.orange, size: 18)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReferralCompactStat extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+
+  const _ReferralCompactStat({required this.icon, required this.value, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 52),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.035),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(.07)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: GhostColors.orange, size: 16),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value, maxLines: 1, style: const TextStyle(color: GhostColors.orangeSoft, fontSize: 13, fontWeight: FontWeight.w900, height: 1)),
+                const SizedBox(height: 3),
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: GhostColors.muted, fontSize: 8, fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReferralStatusBox extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _ReferralStatusBox({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: GhostColors.success.withOpacity(.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: GhostColors.success.withOpacity(.20)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: GhostColors.success, size: 17),
+          const SizedBox(width: 7),
+          Expanded(child: Text(text, style: const TextStyle(color: GhostColors.success, fontSize: 11, fontWeight: FontWeight.w800))),
+        ],
+      ),
     );
   }
 }
