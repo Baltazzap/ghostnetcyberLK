@@ -13,6 +13,9 @@ required_main_tokens = [
     "https://ghostnetcyber.ru/downloads/version.json",
     "Проверить обновления",
     "_scheduleUpdateCheck();",
+    "class _AndroidUpdateInstallerDialog",
+    "Скачать и установить",
+    "installApk",
 ]
 
 for token in required_main_tokens:
@@ -81,3 +84,18 @@ if isinstance(platform_android, dict):
         )
 
 print("Updater contract check passed.")
+
+
+patch_app_name = (root / "tools" / "patch_app_name.py").read_text(
+    encoding="utf-8"
+)
+for token in (
+    "android.permission.REQUEST_INSTALL_PACKAGES",
+    ".update_file_provider",
+    "ACTION_MANAGE_UNKNOWN_APP_SOURCES",
+    "application/vnd.android.package-archive",
+):
+    if token not in patch_app_name and token not in (root / "tools" / "MainActivity.kt.template").read_text(encoding="utf-8"):
+        raise SystemExit(
+            f"Updater check failed: Android installer patch missing {token!r}"
+        )

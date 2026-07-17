@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:io' show Platform, SocketException;
+import 'dart:io' show Directory, File, IOSink, Platform, SocketException;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -90,6 +90,9 @@ const String appUpdateManifestUrl =
     'https://ghostnetcyber.ru/downloads/version.json';
 const String _dismissedUpdateVersionKey =
     'ghostnet_dismissed_update_version';
+const MethodChannel _androidUpdateChannel = MethodChannel(
+  'ru.ghostnet.cybervpn/app_update',
+);
 
 
 class AuthTokenStorage {
@@ -141,6 +144,8 @@ class AppUpdateInfo {
   final String downloadUrl;
   final String publishedAt;
   final bool mandatory;
+  final String sha256;
+  final int expectedSize;
 
   const AppUpdateInfo({
     required this.version,
@@ -150,6 +155,8 @@ class AppUpdateInfo {
     required this.downloadUrl,
     required this.publishedAt,
     required this.mandatory,
+    required this.sha256,
+    required this.expectedSize,
   });
 
   String get releaseId => '$version+$build';
@@ -193,6 +200,10 @@ class AppUpdateInfo {
       downloadUrl: downloadUrl,
       publishedAt: json['published_at']?.toString().trim() ?? '',
       mandatory: json['mandatory'] == true,
+      sha256: platform['sha256']?.toString().trim().toLowerCase() ?? '',
+      expectedSize: platform['size'] is num
+          ? (platform['size'] as num).toInt()
+          : int.tryParse(platform['size']?.toString() ?? '') ?? 0,
     );
   }
 }
@@ -272,7 +283,11 @@ class AppUpdateService {
       );
 
       if (action == _AppUpdateAction.download) {
-        await openExternal(update.downloadUrl);
+        if (Platform.isAndroid) {
+          await _showAndroidUpdateInstaller(context, update);
+        } else {
+          await openExternal(update.downloadUrl);
+        }
         return;
       }
 
@@ -483,8 +498,10 @@ class AppUpdateService {
               PrimaryButton(
                 text: Platform.isWindows
                     ? 'Скачать установщик Windows'
-                    : 'Скачать APK',
-                icon: Icons.download_rounded,
+                    : 'Скачать и установить',
+                icon: Platform.isWindows
+                    ? Icons.download_rounded
+                    : Icons.install_mobile_rounded,
                 onPressed: () => Navigator.pop(
                   dialogContext,
                   _AppUpdateAction.download,
@@ -494,6 +511,474 @@ class AppUpdateService {
           ),
         );
       },
+    );
+  }
+}
+
+Future<void> _showAndroidUpdateInstaller(
+  BuildContext context,
+  AppUpdateInfo update,
+) {
+  return showDialog<void>(
+    context: context,
+    barrierDismissible: !update.mandatory,
+    builder: (_) => _AndroidUpdateInstallerDialog(update: update),
+  );
+}
+
+class _AndroidUpdateInstallerDialog extends StatefulWidget {
+  final AppUpdateInfo update;
+
+  const _AndroidUpdateInstallerDialog({required this.update});
+
+  @override
+  State<_AndroidUpdateInstallerDialog> createState() =>
+      _AndroidUpdateInstallerDialogState();
+}
+
+class _AndroidUpdateInstallerDialogState
+    extends State<_AndroidUpdateInstallerDialog>
+    with WidgetsBindingObserver {
+  http.Client? _client;
+  String _status = 'Подготовка загрузки...';
+  String? _apkPath;
+  double? _progress;
+  int _receivedBytes = 0;
+  int? _totalBytes;
+  bool _busy = true;
+  bool _failed = false;
+  bool _waitingForInstallPermission = false;
+  bool _installerOpened = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_download());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _client?.close();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _waitingForInstallPermission &&
+        _apkPath != null) {
+      unawaited(_launchInstaller(openPermissionSettings: false));
+    }
+  }
+
+  Future<void> _download() async {
+    _client?.close();
+    _client = http.Client();
+
+    if (mounted) {
+      setState(() {
+        _status = 'Скачивание обновления внутри GhostNet...';
+        _progress = null;
+        _receivedBytes = 0;
+        _totalBytes = null;
+        _busy = true;
+        _failed = false;
+        _waitingForInstallPermission = false;
+        _installerOpened = false;
+      });
+    }
+
+    late final File outputFile;
+    IOSink? sink;
+
+    try {
+      final cachePath = await _androidUpdateChannel.invokeMethod<String>(
+        'getCacheDir',
+      );
+      if (cachePath == null || cachePath.trim().isEmpty) {
+        throw Exception('Android не вернул папку для загрузки.');
+      }
+
+      final updatesDirectory = Directory('$cachePath/updates');
+      await updatesDirectory.create(recursive: true);
+
+      await for (final entity in updatesDirectory.list()) {
+        if (entity is File && entity.path.toLowerCase().endsWith('.apk')) {
+          try {
+            await entity.delete();
+          } catch (_) {}
+        }
+      }
+
+      final uri = Uri.parse(widget.update.downloadUrl);
+      var filename = uri.pathSegments.isNotEmpty
+          ? uri.pathSegments.last.trim()
+          : '';
+      filename = filename.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+      if (!filename.toLowerCase().endsWith('.apk')) {
+        filename =
+            'GhostNet-Cyber-VPN-${widget.update.version}-${widget.update.build}.apk';
+      }
+
+      outputFile = File('${updatesDirectory.path}/$filename');
+      final request = http.Request('GET', uri)
+        ..headers.addAll(const {
+          'Accept':
+              'application/vnd.android.package-archive,application/octet-stream,*/*',
+          'Cache-Control': 'no-cache',
+        });
+
+      final response = await _client!
+          .send(request)
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Сервер APK вернул код ${response.statusCode}.',
+        );
+      }
+
+      _totalBytes = response.contentLength;
+      sink = outputFile.openWrite();
+
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        _receivedBytes += chunk.length;
+
+        final total = _totalBytes;
+        if (total != null && total > 0) {
+          _progress = (_receivedBytes / total).clamp(0.0, 1.0).toDouble();
+        }
+
+        if (mounted) {
+          setState(() {
+            _status = total != null && total > 0
+                ? 'Скачано ${_formatBytes(_receivedBytes)} из ${_formatBytes(total)}'
+                : 'Скачано ${_formatBytes(_receivedBytes)}';
+          });
+        }
+      }
+
+      await sink.flush();
+      await sink.close();
+      sink = null;
+
+      final fileLength = await outputFile.length();
+      if (fileLength <= 0) {
+        throw Exception('Сервер вернул пустой APK.');
+      }
+
+      if (_totalBytes != null &&
+          _totalBytes! > 0 &&
+          fileLength != _totalBytes) {
+        throw Exception('APK скачан не полностью. Повторите попытку.');
+      }
+
+      if (widget.update.expectedSize > 0 &&
+          fileLength != widget.update.expectedSize) {
+        throw Exception('Размер APK не совпадает с данными релиза.');
+      }
+
+      final apkHeader = await outputFile.openRead(0, 4).fold<List<int>>(
+        <int>[],
+        (bytes, chunk) => bytes..addAll(chunk),
+      );
+      if (apkHeader.length < 4 ||
+          apkHeader[0] != 0x50 ||
+          apkHeader[1] != 0x4B ||
+          apkHeader[2] != 0x03 ||
+          apkHeader[3] != 0x04) {
+        throw Exception(
+          'Скачанный файл не является корректным APK.',
+        );
+      }
+
+      if (widget.update.sha256.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _status = 'Проверка целостности APK...';
+          });
+        }
+        final actualHash =
+            await _androidUpdateChannel.invokeMethod<String>(
+              'sha256',
+              {'path': outputFile.path},
+            ) ??
+            '';
+        if (actualHash.toLowerCase() != widget.update.sha256) {
+          try {
+            await outputFile.delete();
+          } catch (_) {}
+          throw Exception('Контрольная сумма APK не совпадает.');
+        }
+      }
+
+      _apkPath = outputFile.path;
+      if (mounted) {
+        setState(() {
+          _progress = 1;
+          _status = 'APK скачан. Запускаю установку...';
+        });
+      }
+
+      await _launchInstaller();
+    } on TimeoutException {
+      _setFailure('Сервер APK не ответил за 30 секунд.');
+    } on SocketException {
+      _setFailure('Нет подключения к интернету.');
+    } on PlatformException catch (error) {
+      _setFailure(
+        error.message?.trim().isNotEmpty == true
+            ? error.message!.trim()
+            : 'Android не смог запустить установку.',
+      );
+    } catch (error) {
+      _setFailure(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (sink != null) {
+        try {
+          await sink.close();
+        } catch (_) {}
+      }
+      _client?.close();
+      _client = null;
+    }
+  }
+
+  Future<void> _launchInstaller({bool openPermissionSettings = true}) async {
+    final apkPath = _apkPath;
+    if (apkPath == null || apkPath.isEmpty) return;
+
+    try {
+      final canInstall =
+          await _androidUpdateChannel.invokeMethod<bool>(
+            'canInstallPackages',
+          ) ??
+          false;
+
+      if (!canInstall) {
+        if (mounted) {
+          setState(() {
+            _busy = false;
+            _failed = false;
+            _waitingForInstallPermission = true;
+            _status =
+                'Разрешите GhostNet устанавливать обновления. После возврата установщик запустится автоматически.';
+          });
+        }
+
+        if (openPermissionSettings) {
+          await _androidUpdateChannel.invokeMethod<void>(
+            'openInstallPermissionSettings',
+          );
+        }
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _busy = true;
+          _failed = false;
+          _waitingForInstallPermission = false;
+          _status = 'Открываю системный установщик Android...';
+        });
+      }
+
+      final opened =
+          await _androidUpdateChannel.invokeMethod<bool>(
+            'installApk',
+            {'path': apkPath},
+          ) ??
+          false;
+
+      if (!opened) {
+        throw Exception('Системный установщик не открылся.');
+      }
+
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _installerOpened = true;
+          _status =
+              'Установщик открыт. Нажмите «Установить», чтобы завершить обновление.';
+        });
+      }
+    } on PlatformException catch (error) {
+      _setFailure(
+        error.message?.trim().isNotEmpty == true
+            ? error.message!.trim()
+            : 'Android не смог открыть установщик.',
+      );
+    } catch (error) {
+      _setFailure(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _openInstallPermissionSettings() async {
+    try {
+      if (mounted) {
+        setState(() {
+          _busy = true;
+          _status = 'Открываю разрешение установки приложений...';
+        });
+      }
+      await _androidUpdateChannel.invokeMethod<void>(
+        'openInstallPermissionSettings',
+      );
+    } on PlatformException catch (error) {
+      _setFailure(
+        error.message?.trim().isNotEmpty == true
+            ? error.message!.trim()
+            : 'Не удалось открыть настройки Android.',
+      );
+    }
+  }
+
+  void _setFailure(String message) {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _failed = true;
+      _waitingForInstallPermission = false;
+      _status = message;
+    });
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes Б';
+    final kilobytes = bytes / 1024;
+    if (kilobytes < 1024) return '${kilobytes.toStringAsFixed(1)} КБ';
+    final megabytes = kilobytes / 1024;
+    return '${megabytes.toStringAsFixed(1)} МБ';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = _progress == null
+        ? null
+        : '${(_progress! * 100).round()}%';
+
+    return PopScope(
+      canPop: !widget.update.mandatory && !_busy,
+      child: AlertDialog(
+        backgroundColor: GhostColors.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(
+            color: (_failed ? GhostColors.danger : GhostColors.orange)
+                .withOpacity(.42),
+          ),
+        ),
+        title: const Row(
+          children: [
+            CircleIcon(icon: Icons.install_mobile_rounded),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Обновление GhostNet',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _status,
+                style: TextStyle(
+                  color: _failed
+                      ? GhostColors.danger
+                      : GhostColors.muted,
+                  height: 1.45,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (_busy || _progress != null) ...[
+                const SizedBox(height: 16),
+                LinearProgressIndicator(
+                  value: _progress,
+                  minHeight: 5,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                if (percent != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      percent,
+                      style: const TextStyle(
+                        color: GhostColors.gold,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+              if (_waitingForInstallPermission) ...[
+                const SizedBox(height: 14),
+                const Text(
+                  'Это разрешение Android запрашивает один раз для приложений, установленных не из Google Play.',
+                  style: TextStyle(
+                    color: GhostColors.orangeSoft,
+                    height: 1.4,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+              if (_installerOpened) ...[
+                const SizedBox(height: 14),
+                const Text(
+                  'Android не разрешает обычному приложению нажать кнопку установки вместо пользователя.',
+                  style: TextStyle(
+                    color: GhostColors.muted,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          if (_failed)
+            SecondaryButton(
+              text: 'Повторить',
+              icon: Icons.refresh_rounded,
+              onPressed: _download,
+            ),
+          if (_waitingForInstallPermission)
+            PrimaryButton(
+              text: 'Разрешить установку',
+              icon: Icons.settings_rounded,
+              onPressed: _openInstallPermissionSettings,
+            ),
+          if (_installerOpened ||
+              (_apkPath != null && !_busy && !_failed))
+            PrimaryButton(
+              text: 'Открыть установщик снова',
+              icon: Icons.install_mobile_rounded,
+              onPressed: _launchInstaller,
+            ),
+          if (!widget.update.mandatory && !_busy)
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Закрыть'),
+            ),
+          if (!widget.update.mandatory && _busy)
+            TextButton(
+              onPressed: () {
+                _client?.close();
+                Navigator.pop(context);
+              },
+              child: const Text('Отмена'),
+            ),
+        ],
+      ),
     );
   }
 }

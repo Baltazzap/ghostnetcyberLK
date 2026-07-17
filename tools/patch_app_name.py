@@ -11,6 +11,8 @@ manifest = root / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
 strings = root / "android" / "app" / "src" / "main" / "res" / "values" / "strings.xml"
 colors_xml = root / "android" / "app" / "src" / "main" / "res" / "values" / "colors.xml"
 notification_icon = root / "android" / "app" / "src" / "main" / "res" / "drawable" / "ic_stat_ghostnet.xml"
+update_file_paths = root / "android" / "app" / "src" / "main" / "res" / "xml" / "update_file_paths.xml"
+main_activity_template = root / "tools" / "MainActivity.kt.template"
 
 build_gradle = root / "android" / "app" / "build.gradle"
 build_gradle_kts = root / "android" / "app" / "build.gradle.kts"
@@ -38,6 +40,14 @@ if 'android.permission.INTERNET' not in text:
 if 'android.permission.POST_NOTIFICATIONS' not in text:
     text = re.sub(r'(<manifest[^>]*>)', r'\1\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>', text, count=1)
 
+if 'android.permission.REQUEST_INSTALL_PACKAGES' not in text:
+    text = re.sub(
+        r'(<manifest[^>]*>)',
+        r'\1\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>',
+        text,
+        count=1,
+    )
+
 def _add_app_meta(manifest_text: str, name: str, value_attr: str, value: str) -> str:
     if name in manifest_text:
         return manifest_text
@@ -50,6 +60,21 @@ def _add_app_meta(manifest_text: str, name: str, value_attr: str, value: str) ->
 text = _add_app_meta(text, 'com.google.firebase.messaging.default_notification_channel_id', 'value', 'ghostnet_notifications')
 text = _add_app_meta(text, 'com.google.firebase.messaging.default_notification_icon', 'resource', '@drawable/ic_stat_ghostnet')
 text = _add_app_meta(text, 'com.google.firebase.messaging.default_notification_color', 'resource', '@color/ghostnet_orange')
+
+
+update_provider = """
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.update_file_provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>"""
+
+if '.update_file_provider' not in text:
+    text = text.replace('</application>', update_provider + '\n    </application>', 1)
 
 if 'android:usesCleartextTraffic=' in text:
     text = re.sub(r'android:usesCleartextTraffic="[^"]*"', 'android:usesCleartextTraffic="false"', text)
@@ -107,6 +132,17 @@ notification_icon.write_text(
         android:pathData="M12,2C8.7,2 6,4.7 6,8v3.6L4.3,15.3C4,16 4.5,17 5.3,17h13.4c0.8,0 1.3,-1 1,-1.7L18,11.6V8c0,-3.3 -2.7,-6 -6,-6zM10,20c0.4,1.2 1.5,2 2,2s1.6,-0.8 2,-2h-4z"/>
 </vector>
 ''',
+    encoding="utf-8",
+)
+
+
+update_file_paths.parent.mkdir(parents=True, exist_ok=True)
+update_file_paths.write_text(
+    """<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="ghostnet_updates" path="updates/" />
+</paths>
+""",
     encoding="utf-8",
 )
 
@@ -246,12 +282,14 @@ target_dir = kotlin_root / PACKAGE_PATH
 target_dir.mkdir(parents=True, exist_ok=True)
 target_file = target_dir / "MainActivity.kt"
 
-main_activity_code = f'''package {PACKAGE_NAME}
+if not main_activity_template.exists():
+    raise FileNotFoundError(
+        f"Не найден шаблон MainActivity: {main_activity_template}"
+    )
 
-import io.flutter.embedding.android.FlutterActivity
-
-class MainActivity: FlutterActivity()
-'''
+main_activity_code = main_activity_template.read_text(
+    encoding="utf-8"
+).replace("__PACKAGE_NAME__", PACKAGE_NAME)
 
 for src_root in [kotlin_root, java_root]:
     if not src_root.exists():
