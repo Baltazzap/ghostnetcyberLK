@@ -2778,7 +2778,7 @@ class _ReferralValueRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      minHeight: 44,
+      constraints: const BoxConstraints(minHeight: 44),
       padding: const EdgeInsets.fromLTRB(11, 7, 5, 7),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(.22),
