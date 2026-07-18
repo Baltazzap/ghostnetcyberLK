@@ -86,9 +86,7 @@ const String _tokenKey = 'ghostnet_access_token';
 const String _pendingPaymentKey = 'ghostnet_pending_payment_id';
 const String _manualSubscriptionKey = 'ghostnet_manual_subscription_url';
 const Set<String> _ghostNetSubscriptionHosts = {
-  'api.ghostnetcyber.ru',
-  'ghostnetcyber.ru',
-  'www.ghostnetcyber.ru',
+  'sub.ghostnetcyber.ru',
 };
 
 bool isGhostNetSubscriptionUrl(String value) {
@@ -96,18 +94,88 @@ bool isGhostNetSubscriptionUrl(String value) {
   if (uri == null || uri.scheme.toLowerCase() != 'https') return false;
   if (!_ghostNetSubscriptionHosts.contains(uri.host.toLowerCase())) return false;
   if (uri.userInfo.isNotEmpty || uri.hasFragment) return false;
-  if (uri.path.isEmpty || uri.path == '/') return false;
+  return uri.path.isNotEmpty && uri.path != '/';
+}
 
-  final blockedPaths = <String>{
-    '/iphone',
-    '/iphone/',
-    '/download.html',
-    '/guide.html',
-    '/privacy.html',
-    '/terms.html',
-    '/servers.html',
-  };
-  return !blockedPaths.contains(uri.path.toLowerCase());
+List<String> _extractGhostNetSubscriptionLinks(String source) {
+  final result = <String>[];
+  final seen = <String>{};
+  final matches = RegExp(
+    r'(?:vless|vmess|trojan|ss)://[^\s<>"]+',
+    caseSensitive: false,
+  ).allMatches(source.replaceAll('\r', '\n'));
+  for (final match in matches) {
+    final value = match.group(0)?.trim() ?? '';
+    if (value.isNotEmpty && seen.add(value)) result.add(value);
+  }
+  return result;
+}
+
+String _decodeGhostNetSubscriptionPayload(String text) {
+  final trimmed = text.trim();
+  if (trimmed.contains('://')) return trimmed;
+  try {
+    var normalized = trimmed
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll('-', '+')
+        .replaceAll('_', '/');
+    final padding = normalized.length % 4;
+    if (padding > 0) normalized += List.filled(4 - padding, '=').join();
+    return utf8.decode(base64Decode(normalized), allowMalformed: true);
+  } catch (_) {
+    return trimmed;
+  }
+}
+
+Future<int> _verifyGhostNetSubscriptionUrl(String value) async {
+  final clean = value.trim();
+  if (!isGhostNetSubscriptionUrl(clean)) {
+    throw const FormatException('Разрешены только ссылки https://sub.ghostnetcyber.ru/...');
+  }
+
+  final client = http.Client();
+  try {
+    var currentUri = Uri.parse(clean);
+    for (var redirect = 0; redirect <= 3; redirect++) {
+      final request = http.Request('GET', currentUri)
+        ..followRedirects = false
+        ..headers['Accept'] = 'text/plain, application/octet-stream, */*';
+      final response = await client.send(request).timeout(const Duration(seconds: 15));
+
+      if ({301, 302, 303, 307, 308}.contains(response.statusCode)) {
+        final location = response.headers['location'];
+        if (location == null || location.trim().isEmpty || redirect == 3) {
+          throw const FormatException('Некорректное перенаправление ссылки GhostNet.');
+        }
+        final nextUri = currentUri.resolve(location.trim());
+        if (!isGhostNetSubscriptionUrl(nextUri.toString())) {
+          throw const FormatException('Ссылка перенаправляет за пределы sub.ghostnetcyber.ru.');
+        }
+        currentUri = nextUri;
+        continue;
+      }
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw const FormatException('Ссылка подписки GhostNet недоступна.');
+      }
+
+      final bytes = await response.stream.toBytes();
+      if (bytes.isEmpty || bytes.length > 2 * 1024 * 1024) {
+        throw const FormatException('Получен некорректный файл подписки GhostNet.');
+      }
+
+      final raw = utf8.decode(bytes, allowMalformed: true);
+      final decoded = _decodeGhostNetSubscriptionPayload(raw);
+      final links = _extractGhostNetSubscriptionLinks(decoded);
+      if (links.isEmpty) {
+        throw const FormatException('Ссылка не содержит серверов GhostNet.');
+      }
+      return links.length;
+    }
+    throw const FormatException('Слишком много перенаправлений ссылки GhostNet.');
+  } finally {
+    client.close();
+  }
 }
 const String _pushChannelId = 'ghostnet_notifications';
 const String _pushChannelName = 'GhostNet уведомления';
@@ -2807,8 +2875,6 @@ class _VpnPageState extends State<VpnPage> {
           const SizedBox(height: 16),
           _buildCoreNotice(),
           const SizedBox(height: 16),
-          _buildManualSubscriptionCard(),
-          const SizedBox(height: 16),
           _buildVpnCard(),
           const SizedBox(height: 16),
           _buildServerList(),
@@ -2846,7 +2912,7 @@ class _VpnPageState extends State<VpnPage> {
           const Text('Добавить ссылку подписки', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
           const SizedBox(height: 6),
           const Text(
-            'Принимаются только проверенные HTTPS-ссылки GhostNet. Сторонние подписки и отдельные VLESS/VMess-ссылки будут отклонены.',
+            'Принимаются только проверенные HTTPS-ссылки sub.ghostnetcyber.ru. Сторонние подписки и отдельные VLESS/VMess-ссылки будут отклонены.',
             style: TextStyle(color: GhostColors.muted, height: 1.4),
           ),
           const SizedBox(height: 14),
@@ -2856,7 +2922,7 @@ class _VpnPageState extends State<VpnPage> {
             autocorrect: false,
             enableSuggestions: false,
             decoration: InputDecoration(
-              hintText: 'https://api.ghostnetcyber.ru/...',
+              hintText: 'https://sub.ghostnetcyber.ru/...',
               prefixIcon: const Icon(Icons.link_rounded, color: GhostColors.orange),
               suffixIcon: IconButton(
                 tooltip: 'Вставить из буфера',
@@ -3248,7 +3314,183 @@ class AccountPage extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
+          const ManualSubscriptionImportCard(),
+          const SizedBox(height: 16),
           ReferralProgramCard(profile: profile),
+        ],
+      ),
+    );
+  }
+}
+
+
+class ManualSubscriptionImportCard extends StatefulWidget {
+  const ManualSubscriptionImportCard({super.key});
+
+  @override
+  State<ManualSubscriptionImportCard> createState() => _ManualSubscriptionImportCardState();
+}
+
+class _ManualSubscriptionImportCardState extends State<ManualSubscriptionImportCard> {
+  final TextEditingController _controller = TextEditingController();
+  bool _loading = true;
+  bool _saving = false;
+  String? _savedUrl;
+  String? _message;
+  bool _success = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSaved();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSaved() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_manualSubscriptionKey)?.trim();
+    if (!mounted) return;
+    setState(() {
+      _savedUrl = value != null && value.isNotEmpty ? value : null;
+      _controller.text = _savedUrl ?? '';
+      _loading = false;
+    });
+  }
+
+  Future<void> _paste() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final value = data?.text?.trim() ?? '';
+    if (value.isEmpty) {
+      if (mounted) _showSnack(context, 'В буфере обмена нет ссылки.');
+      return;
+    }
+    _controller.text = value;
+    setState(() {
+      _message = null;
+      _success = false;
+    });
+  }
+
+  Future<void> _save() async {
+    final value = _controller.text.trim();
+    if (!isGhostNetSubscriptionUrl(value)) {
+      setState(() {
+        _message = 'Вставьте ссылку вида https://sub.ghostnetcyber.ru/...';
+        _success = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _message = 'Проверяем ссылку и серверы GhostNet...';
+      _success = false;
+    });
+    try {
+      final count = await _verifyGhostNetSubscriptionUrl(value);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_manualSubscriptionKey, value);
+      if (!mounted) return;
+      setState(() {
+        _savedUrl = value;
+        _message = 'Подписка проверена и сохранена. Серверов: $count.';
+        _success = true;
+      });
+      _showSnack(context, 'Подписка GhostNet добавлена.');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _message = e.toString().replaceFirst('FormatException: ', '').replaceFirst('Exception: ', '');
+        _success = false;
+      });
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _remove() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_manualSubscriptionKey);
+    if (!mounted) return;
+    setState(() {
+      _savedUrl = null;
+      _controller.clear();
+      _message = 'Импортированная ссылка удалена.';
+      _success = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSaved = _savedUrl != null && _savedUrl!.isNotEmpty;
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MiniBadge(text: 'МОИ КЛЮЧИ'),
+          const SizedBox(height: 12),
+          const Text('Добавить подписку GhostNet', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 6),
+          const Text(
+            'Можно вставить только ссылку подписки с домена sub.ghostnetcyber.ru. Ссылка будет проверена перед сохранением.',
+            style: TextStyle(color: GhostColors.muted, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _controller,
+            enabled: !_loading && !_saving,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: InputDecoration(
+              hintText: 'https://sub.ghostnetcyber.ru/...',
+              prefixIcon: const Icon(Icons.link_rounded, color: GhostColors.orange),
+              suffixIcon: IconButton(
+                tooltip: 'Вставить из буфера',
+                onPressed: _loading || _saving ? null : _paste,
+                icon: const Icon(Icons.content_paste_rounded),
+              ),
+              filled: true,
+              fillColor: Colors.black.withOpacity(.24),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(.08))),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(.08))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: GhostColors.orange)),
+            ),
+          ),
+          if (_message != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _message!,
+              style: TextStyle(color: _success ? GhostColors.success : GhostColors.gold, height: 1.35, fontSize: 13),
+            ),
+          ],
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final save = PrimaryButton(
+                text: _saving ? 'Проверяем...' : (hasSaved ? 'Обновить ссылку' : 'Добавить подписку'),
+                icon: Icons.add_link_rounded,
+                onPressed: _loading || _saving ? null : _save,
+              );
+              final remove = SecondaryButton(
+                text: 'Удалить',
+                icon: Icons.delete_outline_rounded,
+                onPressed: _loading || _saving || !hasSaved ? null : _remove,
+              );
+              if (constraints.maxWidth < 520) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [save, if (hasSaved) ...[const SizedBox(height: 10), remove]],
+                );
+              }
+              return Wrap(spacing: 10, runSpacing: 10, children: [save, if (hasSaved) remove]);
+            },
+          ),
         ],
       ),
     );
