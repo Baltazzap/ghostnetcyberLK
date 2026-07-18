@@ -85,6 +85,8 @@ const String appPaymentReturnUrl = 'https://api.ghostnetcyber.ru/api/payments/yo
 const String _tokenKey = 'ghostnet_access_token';
 const String _pendingPaymentKey = 'ghostnet_pending_payment_id';
 const String _manualSubscriptionKey = 'ghostnet_manual_subscription_url';
+const String _manualSubscriptionMetaKey = 'ghostnet_manual_subscription_meta';
+final ValueNotifier<int> manualSubscriptionRevision = ValueNotifier<int>(0);
 const Set<String> _ghostNetSubscriptionHosts = {
   'sub.ghostnetcyber.ru',
 };
@@ -127,7 +129,71 @@ String _decodeGhostNetSubscriptionPayload(String text) {
   }
 }
 
-Future<int> _verifyGhostNetSubscriptionUrl(String value) async {
+class GhostNetSubscriptionVerification {
+  final int serverCount;
+  final String? planCode;
+  final String? planName;
+  final DateTime? expiresAt;
+  final int? deviceLimit;
+
+  const GhostNetSubscriptionVerification({
+    required this.serverCount,
+    this.planCode,
+    this.planName,
+    this.expiresAt,
+    this.deviceLimit,
+  });
+}
+
+const Map<String, String> _knownGhostNetPlans = {
+  'ghost_start': 'GHOST START',
+  'ghost_net': 'GHOST NET',
+  'ghost_plus': 'GHOST PLUS',
+  'ghost_premium': 'GHOST PREMIUM',
+  'ghost_ultimate': 'GHOST ULTIMATE',
+};
+
+String? _decodeProfileTitle(String? value) {
+  final raw = value?.trim() ?? '';
+  if (raw.isEmpty) return null;
+  if (!raw.toLowerCase().startsWith('base64:')) return raw;
+  try {
+    var encoded = raw.substring(7).trim().replaceAll('-', '+').replaceAll('_', '/');
+    final padding = encoded.length % 4;
+    if (padding > 0) encoded += List.filled(4 - padding, '=').join();
+    return utf8.decode(base64Decode(encoded), allowMalformed: true).trim();
+  } catch (_) {
+    return raw;
+  }
+}
+
+MapEntry<String, String>? _detectGhostNetPlan(String source) {
+  final normalized = source.toLowerCase().replaceAll(RegExp(r'[_\-]+'), ' ');
+  for (final entry in _knownGhostNetPlans.entries) {
+    final codeText = entry.key.replaceAll('_', ' ');
+    final nameText = entry.value.toLowerCase();
+    if (normalized.contains(codeText) || normalized.contains(nameText)) return entry;
+  }
+  return null;
+}
+
+DateTime? _subscriptionExpiryFromHeaders(Map<String, String> headers) {
+  final info = headers['subscription-userinfo'] ?? headers['x-subscription-userinfo'] ?? '';
+  final match = RegExp(r'(?:^|[;\s])expire=(\d+)', caseSensitive: false).firstMatch(info);
+  final seconds = int.tryParse(match?.group(1) ?? '');
+  if (seconds == null || seconds <= 0) return null;
+  return DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true);
+}
+
+int? _subscriptionDeviceLimitFromHeaders(Map<String, String> headers) {
+  for (final key in const ['x-ghostnet-device-limit', 'x-device-limit', 'device-limit']) {
+    final value = int.tryParse(headers[key]?.trim() ?? '');
+    if (value != null && value > 0 && value <= 100) return value;
+  }
+  return null;
+}
+
+Future<GhostNetSubscriptionVerification> _verifyGhostNetSubscriptionUrl(String value) async {
   final clean = value.trim();
   if (!isGhostNetSubscriptionUrl(clean)) {
     throw const FormatException('Разрешены только ссылки https://sub.ghostnetcyber.ru/...');
@@ -170,7 +236,25 @@ Future<int> _verifyGhostNetSubscriptionUrl(String value) async {
       if (links.isEmpty) {
         throw const FormatException('Ссылка не содержит серверов GhostNet.');
       }
-      return links.length;
+
+      final metadataText = [
+        _decodeProfileTitle(response.headers['profile-title']),
+        _decodeProfileTitle(response.headers['x-profile-title']),
+        response.headers['content-disposition'],
+        response.headers['x-ghostnet-plan'],
+        response.headers['x-plan-code'],
+        response.headers['x-plan-name'],
+        decoded.length > 4096 ? decoded.substring(0, 4096) : decoded,
+      ].whereType<String>().join(' ');
+      final detectedPlan = _detectGhostNetPlan(metadataText);
+
+      return GhostNetSubscriptionVerification(
+        serverCount: links.length,
+        planCode: detectedPlan?.key,
+        planName: detectedPlan?.value,
+        expiresAt: _subscriptionExpiryFromHeaders(response.headers),
+        deviceLimit: _subscriptionDeviceLimitFromHeaders(response.headers),
+      );
     }
     throw const FormatException('Слишком много перенаправлений ссылки GhostNet.');
   } finally {
@@ -2079,6 +2163,129 @@ class SubscriptionInfo {
   }
 }
 
+String _canonicalSubscriptionUrl(String? value) {
+  final raw = value?.trim() ?? '';
+  final uri = Uri.tryParse(raw);
+  if (uri == null) return raw;
+  final normalized = uri.replace(
+    scheme: uri.scheme.toLowerCase(),
+    host: uri.host.toLowerCase(),
+    fragment: '',
+  ).toString();
+  return normalized.endsWith('/') ? normalized.substring(0, normalized.length - 1) : normalized;
+}
+
+SubscriptionInfo? _findSubscriptionByUrl(List<SubscriptionInfo> subscriptions, String? url) {
+  final target = _canonicalSubscriptionUrl(url);
+  if (target.isEmpty) return null;
+  for (final sub in subscriptions) {
+    if (_canonicalSubscriptionUrl(sub.subscriptionUrl) == target) return sub;
+  }
+  return null;
+}
+
+class ManualSubscriptionMeta {
+  final String planCode;
+  final String planName;
+  final DateTime? expiresAt;
+  final int deviceLimit;
+  final int serverCount;
+  final String status;
+
+  const ManualSubscriptionMeta({
+    required this.planCode,
+    required this.planName,
+    required this.expiresAt,
+    required this.deviceLimit,
+    required this.serverCount,
+    required this.status,
+  });
+
+  factory ManualSubscriptionMeta.fromSubscription(SubscriptionInfo sub, {int serverCount = 0}) {
+    final keyCount = (sub.vpnKey ?? '').split('\n').where((e) => e.trim().isNotEmpty).length;
+    return ManualSubscriptionMeta(
+      planCode: sub.planCode,
+      planName: sub.planName,
+      expiresAt: sub.expiresAt,
+      deviceLimit: sub.deviceLimit,
+      serverCount: serverCount > 0 ? serverCount : keyCount,
+      status: sub.status,
+    );
+  }
+
+  factory ManualSubscriptionMeta.fromVerification(GhostNetSubscriptionVerification verification) {
+    final expires = verification.expiresAt;
+    return ManualSubscriptionMeta(
+      planCode: verification.planCode ?? '',
+      planName: verification.planName ?? 'Подписка GhostNet',
+      expiresAt: expires,
+      deviceLimit: verification.deviceLimit ?? 3,
+      serverCount: verification.serverCount,
+      status: expires == null || expires.isAfter(DateTime.now().toUtc()) ? 'active' : 'expired',
+    );
+  }
+
+  factory ManualSubscriptionMeta.fromJson(Map<String, dynamic> json) {
+    return ManualSubscriptionMeta(
+      planCode: json['plan_code']?.toString() ?? '',
+      planName: json['plan_name']?.toString() ?? 'Подписка GhostNet',
+      expiresAt: DateTime.tryParse(json['expires_at']?.toString() ?? ''),
+      deviceLimit: (json['device_limit'] as num?)?.toInt() ?? 3,
+      serverCount: (json['server_count'] as num?)?.toInt() ?? 0,
+      status: json['status']?.toString() ?? 'active',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'plan_code': planCode,
+    'plan_name': planName,
+    'expires_at': expiresAt?.toIso8601String(),
+    'device_limit': deviceLimit,
+    'server_count': serverCount,
+    'status': status,
+  };
+
+  SubscriptionInfo toSubscription(String url) => SubscriptionInfo(
+    id: -1,
+    planCode: planCode,
+    planName: planName,
+    vpnKeyName: 'Импортированная подписка GhostNet',
+    vpnKey: null,
+    subscriptionUrl: url,
+    deviceLimit: deviceLimit,
+    status: status,
+    expiresAt: expiresAt,
+  );
+
+  static Future<ManualSubscriptionMeta?> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_manualSubscriptionMetaKey)?.trim() ?? '';
+    if (raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return ManualSubscriptionMeta.fromJson(decoded);
+      if (decoded is Map) return ManualSubscriptionMeta.fromJson(decoded.cast<String, dynamic>());
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> save(ManualSubscriptionMeta meta) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_manualSubscriptionMetaKey, jsonEncode(meta.toJson()));
+  }
+
+  static Future<void> clear() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_manualSubscriptionMetaKey);
+  }
+}
+
+Future<String?> _loadManualSubscriptionUrl() async {
+  final prefs = await SharedPreferences.getInstance();
+  final value = prefs.getString(_manualSubscriptionKey)?.trim() ?? '';
+  return value.isEmpty ? null : value;
+}
+
 String formatDate(DateTime? value) {
   if (value == null) return '—';
   // API stores dates in UTC. If the backend sends a naive timestamp without Z,
@@ -3314,7 +3521,7 @@ class AccountPage extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
-          const ManualSubscriptionImportCard(),
+          ManualSubscriptionImportCard(profile: profile),
           const SizedBox(height: 16),
           ReferralProgramCard(profile: profile),
         ],
@@ -3325,7 +3532,9 @@ class AccountPage extends StatelessWidget {
 
 
 class ManualSubscriptionImportCard extends StatefulWidget {
-  const ManualSubscriptionImportCard({super.key});
+  final UserProfile profile;
+
+  const ManualSubscriptionImportCard({super.key, required this.profile});
 
   @override
   State<ManualSubscriptionImportCard> createState() => _ManualSubscriptionImportCardState();
@@ -3392,16 +3601,26 @@ class _ManualSubscriptionImportCardState extends State<ManualSubscriptionImportC
       _success = false;
     });
     try {
-      final count = await _verifyGhostNetSubscriptionUrl(value);
+      final verification = await _verifyGhostNetSubscriptionUrl(value);
+      SubscriptionInfo? matched;
+      try {
+        final subscriptions = await GhostApi.mySubscriptions(widget.profile.token);
+        matched = _findSubscriptionByUrl(subscriptions, value);
+      } catch (_) {}
+      final meta = matched != null
+          ? ManualSubscriptionMeta.fromSubscription(matched, serverCount: verification.serverCount)
+          : ManualSubscriptionMeta.fromVerification(verification);
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_manualSubscriptionKey, value);
+      await ManualSubscriptionMeta.save(meta);
+      manualSubscriptionRevision.value++;
       if (!mounted) return;
       setState(() {
         _savedUrl = value;
-        _message = 'Подписка проверена и сохранена. Серверов: $count.';
+        _message = 'Подписка сохранена. Тариф: ${meta.planName}. Серверов: ${meta.serverCount}.';
         _success = true;
       });
-      _showSnack(context, 'Подписка GhostNet добавлена.');
+      _showSnack(context, 'Тариф ${meta.planName} добавлен в кабинет.');
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -3416,6 +3635,8 @@ class _ManualSubscriptionImportCardState extends State<ManualSubscriptionImportC
   Future<void> _remove() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_manualSubscriptionKey);
+    await ManualSubscriptionMeta.clear();
+    manualSubscriptionRevision.value++;
     if (!mounted) return;
     setState(() {
       _savedUrl = null;
@@ -5627,10 +5848,23 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
   bool _loading = true;
   String? _error;
   List<SubscriptionInfo> _subscriptions = const [];
+  String? _manualUrl;
+  ManualSubscriptionMeta? _manualMeta;
 
   @override
   void initState() {
     super.initState();
+    manualSubscriptionRevision.addListener(_handleManualSubscriptionChanged);
+    _loadDashboard();
+  }
+
+  @override
+  void dispose() {
+    manualSubscriptionRevision.removeListener(_handleManualSubscriptionChanged);
+    super.dispose();
+  }
+
+  void _handleManualSubscriptionChanged() {
     _loadDashboard();
   }
 
@@ -5639,20 +5873,29 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
       _loading = true;
       _error = null;
     });
+    List<SubscriptionInfo> subs = const [];
+    String? loadError;
     try {
-      final subs = await GhostApi.mySubscriptions(widget.profile.token);
-      if (!mounted) return;
-      setState(() {
-        _subscriptions = subs;
-        _loading = false;
-      });
+      subs = await GhostApi.mySubscriptions(widget.profile.token);
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
-        _loading = false;
-      });
+      loadError = e.toString().replaceFirst('Exception: ', '');
     }
+    final manualUrl = await _loadManualSubscriptionUrl();
+    var manualMeta = await ManualSubscriptionMeta.load();
+    final matched = _findSubscriptionByUrl(subs, manualUrl);
+    if (matched != null) {
+      final refreshedMeta = ManualSubscriptionMeta.fromSubscription(matched, serverCount: manualMeta?.serverCount ?? 0);
+      manualMeta = refreshedMeta;
+      await ManualSubscriptionMeta.save(refreshedMeta);
+    }
+    if (!mounted) return;
+    setState(() {
+      _subscriptions = subs;
+      _manualUrl = manualUrl;
+      _manualMeta = manualMeta;
+      _error = loadError;
+      _loading = false;
+    });
   }
 
   Future<void> _claimTrial() async {
@@ -5686,6 +5929,9 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
   }
 
   SubscriptionInfo? get _activeSubscription {
+    final matched = _findSubscriptionByUrl(_subscriptions, _manualUrl);
+    if (matched != null) return matched;
+    if (_manualUrl != null && _manualMeta != null) return _manualMeta!.toSubscription(_manualUrl!);
     for (final sub in _subscriptions) {
       if (sub.status.toLowerCase() == 'active') return sub;
     }
@@ -6496,10 +6742,23 @@ class _SubscriptionStatusCardState extends State<SubscriptionStatusCard> {
   bool _loading = true;
   String? _error;
   List<SubscriptionInfo> _subscriptions = const [];
+  String? _manualUrl;
+  ManualSubscriptionMeta? _manualMeta;
 
   @override
   void initState() {
     super.initState();
+    manualSubscriptionRevision.addListener(_handleManualSubscriptionChanged);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    manualSubscriptionRevision.removeListener(_handleManualSubscriptionChanged);
+    super.dispose();
+  }
+
+  void _handleManualSubscriptionChanged() {
     _load();
   }
 
@@ -6508,20 +6767,39 @@ class _SubscriptionStatusCardState extends State<SubscriptionStatusCard> {
       _loading = true;
       _error = null;
     });
+    List<SubscriptionInfo> subs = const [];
+    String? loadError;
     try {
-      final subs = await GhostApi.mySubscriptions(widget.profile.token);
-      if (!mounted) return;
-      setState(() {
-        _subscriptions = subs;
-        _loading = false;
-      });
+      subs = await GhostApi.mySubscriptions(widget.profile.token);
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
-        _loading = false;
-      });
+      loadError = e.toString().replaceFirst('Exception: ', '');
     }
+    final manualUrl = await _loadManualSubscriptionUrl();
+    var manualMeta = await ManualSubscriptionMeta.load();
+    final matched = _findSubscriptionByUrl(subs, manualUrl);
+    if (matched != null) {
+      final refreshedMeta = ManualSubscriptionMeta.fromSubscription(matched, serverCount: manualMeta?.serverCount ?? 0);
+      manualMeta = refreshedMeta;
+      await ManualSubscriptionMeta.save(refreshedMeta);
+    }
+    if (!mounted) return;
+    setState(() {
+      _subscriptions = subs;
+      _manualUrl = manualUrl;
+      _manualMeta = manualMeta;
+      _error = loadError;
+      _loading = false;
+    });
+  }
+
+  SubscriptionInfo? get _displaySubscription {
+    final matched = _findSubscriptionByUrl(_subscriptions, _manualUrl);
+    if (matched != null) return matched;
+    if (_manualUrl != null && _manualMeta != null) return _manualMeta!.toSubscription(_manualUrl!);
+    for (final sub in _subscriptions) {
+      if (sub.status.toLowerCase() == 'active') return sub;
+    }
+    return _subscriptions.isEmpty ? null : _subscriptions.first;
   }
 
   Future<void> _copy(String? text, String message) async {
@@ -6551,7 +6829,7 @@ class _SubscriptionStatusCardState extends State<SubscriptionStatusCard> {
       );
     }
 
-    if (_error != null) {
+    if (_error != null && _displaySubscription == null) {
       return PremiumCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -6568,7 +6846,8 @@ class _SubscriptionStatusCardState extends State<SubscriptionStatusCard> {
       );
     }
 
-    if (_subscriptions.isEmpty) {
+    final sub = _displaySubscription;
+    if (sub == null) {
       return PremiumCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -6585,9 +6864,9 @@ class _SubscriptionStatusCardState extends State<SubscriptionStatusCard> {
       );
     }
 
-    final sub = _subscriptions.first;
-    final active = sub.status == 'active';
-    final keyCount = (sub.vpnKey ?? '').split('\n').where((e) => e.trim().isNotEmpty).length;
+    final active = sub.status.toLowerCase() == 'active';
+    final keyCountFromKey = (sub.vpnKey ?? '').split('\n').where((e) => e.trim().isNotEmpty).length;
+    final keyCount = keyCountFromKey > 0 ? keyCountFromKey : (_manualMeta?.serverCount ?? 0);
 
     return PremiumCard(
       child: Column(
