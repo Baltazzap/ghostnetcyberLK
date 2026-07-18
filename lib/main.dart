@@ -83,6 +83,8 @@ const String supportUrl = 'https://t.me/baltazzap';
 const String apiBaseUrl = 'https://api.ghostnetcyber.ru';
 const String appPaymentReturnUrl = 'https://api.ghostnetcyber.ru/api/payments/yookassa/return';
 const String _tokenKey = 'ghostnet_access_token';
+const String _rememberMeKey = 'ghostnet_remember_me';
+const String _rememberedEmailKey = 'ghostnet_remembered_email';
 const String _pendingPaymentKey = 'ghostnet_pending_payment_id';
 const String _manualSubscriptionKey = 'ghostnet_manual_subscription_url';
 const String _manualSubscriptionMetaKey = 'ghostnet_manual_subscription_meta';
@@ -308,6 +310,37 @@ class AuthTokenStorage {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
+  }
+}
+
+
+class LoginPreferences {
+  static Future<bool> rememberMe() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getBool(_rememberMeKey);
+    if (stored != null) return stored;
+
+    // Пользователи предыдущих версий уже имели постоянную сессию.
+    // Сохраняем прежнее поведение при обновлении приложения.
+    final token = await AuthTokenStorage.read();
+    final legacyRemember = token != null && token.isNotEmpty;
+    if (legacyRemember) await prefs.setBool(_rememberMeKey, true);
+    return legacyRemember;
+  }
+
+  static Future<String> rememberedEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_rememberedEmailKey)?.trim() ?? '';
+  }
+
+  static Future<void> save({required bool remember, required String email}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_rememberMeKey, remember);
+    if (remember && email.trim().isNotEmpty) {
+      await prefs.setString(_rememberedEmailKey, email.trim().toLowerCase());
+    } else {
+      await prefs.remove(_rememberedEmailKey);
+    }
   }
 }
 
@@ -2340,10 +2373,15 @@ class _AppBootstrapState extends State<AppBootstrap> {
     }
   }
 
-  Future<void> _login(String email, String password) async {
+  Future<void> _login(String email, String password, bool rememberMe) async {
     final token = await GhostApi.login(email: email, password: password);
     final profile = await GhostApi.me(token);
-    await AuthTokenStorage.write(token);
+    await LoginPreferences.save(remember: rememberMe, email: email);
+    if (rememberMe) {
+      await AuthTokenStorage.write(token);
+    } else {
+      await AuthTokenStorage.delete();
+    }
     unawaited(PushService.registerForUser(token));
     if (!mounted) return;
     setState(() => _profile = profile);
@@ -2356,6 +2394,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
       telegramUsername: telegram,
     );
     final profile = await GhostApi.me(token);
+    await LoginPreferences.save(remember: true, email: email);
     await AuthTokenStorage.write(token);
     unawaited(PushService.registerForUser(token));
     if (!mounted) return;
@@ -2414,7 +2453,7 @@ class SplashScreen extends StatelessWidget {
 
 
 class RegisterScreen extends StatefulWidget {
-  final Future<void> Function(String email, String password) onLogin;
+  final Future<void> Function(String email, String password, bool rememberMe) onLogin;
   final Future<void> Function(String email, String password, String telegram) onRegister;
 
   const RegisterScreen({super.key, required this.onLogin, required this.onRegister});
@@ -2429,6 +2468,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _telegram = TextEditingController();
   bool _saving = false;
   bool _registerMode = false;
+  bool _rememberMe = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLoginPreferences();
+  }
+
+  Future<void> _loadLoginPreferences() async {
+    final remember = await LoginPreferences.rememberMe();
+    final email = remember ? await LoginPreferences.rememberedEmail() : '';
+    if (!mounted) return;
+    setState(() {
+      _rememberMe = remember;
+      if (email.isNotEmpty) _email.text = email;
+    });
+  }
 
   @override
   void dispose() {
@@ -2459,7 +2515,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         await widget.onRegister(email, password, telegram);
         if (mounted) _showSnack(context, 'Аккаунт создан.');
       } else {
-        await widget.onLogin(email, password);
+        await widget.onLogin(email, password, _rememberMe);
         if (mounted) _showSnack(context, 'Вход выполнен.');
       }
     } catch (e) {
@@ -2518,6 +2574,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   GhostTextField(controller: _email, label: 'Email', icon: Icons.email_rounded),
                   const SizedBox(height: 14),
                   GhostTextField(controller: _password, label: 'Пароль', icon: Icons.lock_rounded, obscureText: true),
+                  if (!_registerMode) ...[
+                    const SizedBox(height: 10),
+                    InkWell(
+                      onTap: _saving ? null : () => setState(() => _rememberMe = !_rememberMe),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Checkbox(
+                              value: _rememberMe,
+                              onChanged: _saving ? null : (value) => setState(() => _rememberMe = value ?? false),
+                              activeColor: GhostColors.orange,
+                              checkColor: GhostColors.black,
+                              side: BorderSide(color: GhostColors.orange.withOpacity(.65), width: 1.4),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            const SizedBox(width: 4),
+                            const Expanded(
+                              child: Text(
+                                'Запомнить меня',
+                                style: TextStyle(fontWeight: FontWeight.w800, color: GhostColors.text),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   if (_registerMode) ...[
                     const SizedBox(height: 14),
                     GhostTextField(controller: _telegram, label: 'Telegram username', icon: Icons.alternate_email_rounded),

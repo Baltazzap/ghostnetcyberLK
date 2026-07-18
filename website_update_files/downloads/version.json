@@ -1,24 +1,24 @@
 {
   "schema": 2,
-  "release_id": "1.0.12-13",
-  "version": "1.0.12",
-  "build": 13,
+  "release_id": "1.0.13-14",
+  "version": "1.0.13",
+  "build": 14,
   "mandatory": false,
   "title": "Доступно обновление GhostNet Cyber VPN",
-  "message": "Добавлено безопасное удаление вставленной подписки с очисткой тарифа и локального кэша.",
+  "message": "Добавлена функция «Запомнить меня» на экране входа Android и Windows.",
   "published_at": "18.07.2026",
-  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.12-13.apk",
-  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.12-13.exe",
+  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.13-14.apk",
+  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.13-14.exe",
   "android": {
-    "version": "1.0.12",
-    "build": 13,
-    "filename": "GhostNet-Cyber-VPN-1.0.12-13.apk",
-    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.12-13.apk"
+    "version": "1.0.13",
+    "build": 14,
+    "filename": "GhostNet-Cyber-VPN-1.0.13-14.apk",
+    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.13-14.apk"
   },
   "windows": {
-    "version": "1.0.12",
-    "build": 13,
-    "filename": "GhostNet-Cyber-VPN-Setup-1.0.12-13.exe",
-    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.12-13.exe"
+    "version": "1.0.13",
+    "build": 14,
+    "filename": "GhostNet-Cyber-VPN-Setup-1.0.13-14.exe",
+    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.13-14.exe"
   }
 }
