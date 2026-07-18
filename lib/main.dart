@@ -84,6 +84,31 @@ const String apiBaseUrl = 'https://api.ghostnetcyber.ru';
 const String appPaymentReturnUrl = 'https://api.ghostnetcyber.ru/api/payments/yookassa/return';
 const String _tokenKey = 'ghostnet_access_token';
 const String _pendingPaymentKey = 'ghostnet_pending_payment_id';
+const String _manualSubscriptionKey = 'ghostnet_manual_subscription_url';
+const Set<String> _ghostNetSubscriptionHosts = {
+  'api.ghostnetcyber.ru',
+  'ghostnetcyber.ru',
+  'www.ghostnetcyber.ru',
+};
+
+bool isGhostNetSubscriptionUrl(String value) {
+  final uri = Uri.tryParse(value.trim());
+  if (uri == null || uri.scheme.toLowerCase() != 'https') return false;
+  if (!_ghostNetSubscriptionHosts.contains(uri.host.toLowerCase())) return false;
+  if (uri.userInfo.isNotEmpty || uri.hasFragment) return false;
+  if (uri.path.isEmpty || uri.path == '/') return false;
+
+  final blockedPaths = <String>{
+    '/iphone',
+    '/iphone/',
+    '/download.html',
+    '/guide.html',
+    '/privacy.html',
+    '/terms.html',
+    '/servers.html',
+  };
+  return !blockedPaths.contains(uri.path.toLowerCase());
+}
 const String _pushChannelId = 'ghostnet_notifications';
 const String _pushChannelName = 'GhostNet уведомления';
 const String appUpdateManifestUrl =
@@ -2519,12 +2544,21 @@ class _VpnPageState extends State<VpnPage> {
   String? _error;
   List<VpnServerItem> _servers = const [];
   List<SubscriptionInfo> _subscriptions = const [];
+  final TextEditingController _manualSubscriptionController = TextEditingController();
+  String? _manualSubscriptionUrl;
+  bool _importingSubscription = false;
   int _selected = 0;
 
   @override
   void initState() {
     super.initState();
     _initialize();
+  }
+
+  @override
+  void dispose() {
+    _manualSubscriptionController.dispose();
+    super.dispose();
   }
 
   Future<void> _initialize() async {
@@ -2534,6 +2568,11 @@ class _VpnPageState extends State<VpnPage> {
     });
 
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedManualUrl = prefs.getString(_manualSubscriptionKey)?.trim();
+      _manualSubscriptionUrl = savedManualUrl != null && savedManualUrl.isNotEmpty ? savedManualUrl : null;
+      _manualSubscriptionController.text = _manualSubscriptionUrl ?? '';
+
       final subs = await GhostApi.mySubscriptions(widget.profile.token);
       final servers = await _loadServers(subs);
       if (!mounted) return;
@@ -2563,6 +2602,15 @@ class _VpnPageState extends State<VpnPage> {
       final parsedNameRaw = (name ?? '').trim().isNotEmpty ? name!.trim() : _nameFromLink(clean);
       final parsedName = _normalizeServerName(parsedNameRaw);
       parsed.add(VpnServerItem(name: parsedName, link: clean, subscriptionUrl: subscriptionUrl));
+    }
+
+    final manualUrl = _manualSubscriptionUrl?.trim();
+    if (manualUrl != null && manualUrl.isNotEmpty && isGhostNetSubscriptionUrl(manualUrl)) {
+      try {
+        await _appendSubscriptionServers(manualUrl, addLink);
+      } catch (_) {
+        // Старая или временно недоступная импортированная ссылка не должна ломать ключи из аккаунта.
+      }
     }
 
     try {
@@ -2602,6 +2650,74 @@ class _VpnPageState extends State<VpnPage> {
     }
 
     return parsed;
+  }
+
+  Future<int> _appendSubscriptionServers(
+    String url,
+    Future<void> Function(String link, {String? name, String? subscriptionUrl}) addLink,
+  ) async {
+    final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw const FormatException('Ссылка GhostNet недоступна.');
+    }
+    final decoded = _decodeSubscriptionPayload(utf8.decode(response.bodyBytes));
+    final links = _extractShareLinks(decoded);
+    for (final link in links) {
+      await addLink(link, subscriptionUrl: url);
+    }
+    return links.length;
+  }
+
+  Future<void> _pasteManualSubscription() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final value = data?.text?.trim() ?? '';
+    if (value.isEmpty) {
+      if (mounted) _showSnack(context, 'В буфере обмена нет ссылки.');
+      return;
+    }
+    _manualSubscriptionController.text = value;
+  }
+
+  Future<void> _saveManualSubscription() async {
+    final value = _manualSubscriptionController.text.trim();
+    if (!isGhostNetSubscriptionUrl(value)) {
+      _showSnack(context, 'Можно добавить только HTTPS-ссылку подписки GhostNet.');
+      return;
+    }
+
+    setState(() => _importingSubscription = true);
+    try {
+      final links = <String>[];
+      Future<void> collect(String link, {String? name, String? subscriptionUrl}) async {
+        if (!links.contains(link)) links.add(link);
+      }
+      final count = await _appendSubscriptionServers(value, collect);
+      if (count == 0) {
+        throw const FormatException('Ссылка не содержит серверов GhostNet.');
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_manualSubscriptionKey, value);
+      _manualSubscriptionUrl = value;
+      if (mounted) _showSnack(context, 'Подписка GhostNet добавлена.');
+      await _initialize();
+    } catch (e) {
+      if (mounted) {
+        final message = e.toString().replaceFirst('FormatException: ', '').replaceFirst('Exception: ', '');
+        _showSnack(context, message.isEmpty ? 'Не удалось проверить подписку.' : message);
+      }
+    } finally {
+      if (mounted) setState(() => _importingSubscription = false);
+    }
+  }
+
+  Future<void> _removeManualSubscription() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_manualSubscriptionKey);
+    _manualSubscriptionUrl = null;
+    _manualSubscriptionController.clear();
+    if (mounted) _showSnack(context, 'Импортированная подписка удалена.');
+    await _initialize();
   }
 
   List<String> _extractShareLinks(String source) {
@@ -2691,6 +2807,8 @@ class _VpnPageState extends State<VpnPage> {
           const SizedBox(height: 16),
           _buildCoreNotice(),
           const SizedBox(height: 16),
+          _buildManualSubscriptionCard(),
+          const SizedBox(height: 16),
           _buildVpnCard(),
           const SizedBox(height: 16),
           _buildServerList(),
@@ -2711,6 +2829,68 @@ class _VpnPageState extends State<VpnPage> {
           Text(
             'Серверы и ключи рабочие. Hiddify, Happ и v2RayTun подключаются с этими ключами. Старый встроенный модуль отключён, потому что он показывал таймер без реального подключения. Следующая версия будет на sing-box / libbox core.',
             style: TextStyle(color: GhostColors.muted, height: 1.45),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildManualSubscriptionCard() {
+    final hasImported = _manualSubscriptionUrl != null && _manualSubscriptionUrl!.isNotEmpty;
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MiniBadge(text: 'ИМПОРТ GHOSTNET'),
+          const SizedBox(height: 12),
+          const Text('Добавить ссылку подписки', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 6),
+          const Text(
+            'Принимаются только проверенные HTTPS-ссылки GhostNet. Сторонние подписки и отдельные VLESS/VMess-ссылки будут отклонены.',
+            style: TextStyle(color: GhostColors.muted, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _manualSubscriptionController,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: InputDecoration(
+              hintText: 'https://api.ghostnetcyber.ru/...',
+              prefixIcon: const Icon(Icons.link_rounded, color: GhostColors.orange),
+              suffixIcon: IconButton(
+                tooltip: 'Вставить из буфера',
+                onPressed: _importingSubscription ? null : _pasteManualSubscription,
+                icon: const Icon(Icons.content_paste_rounded),
+              ),
+              filled: true,
+              fillColor: Colors.black.withOpacity(.24),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(.08))),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(.08))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: GhostColors.orange)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final add = PrimaryButton(
+                text: _importingSubscription ? 'Проверяем...' : (hasImported ? 'Обновить ссылку' : 'Добавить подписку'),
+                icon: Icons.add_link_rounded,
+                onPressed: _importingSubscription ? null : _saveManualSubscription,
+              );
+              final remove = SecondaryButton(
+                text: 'Удалить',
+                icon: Icons.delete_outline_rounded,
+                onPressed: _importingSubscription || !hasImported ? null : _removeManualSubscription,
+              );
+              if (constraints.maxWidth < 520) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [Center(child: add), if (hasImported) ...[const SizedBox(height: 10), Center(child: remove)]],
+                );
+              }
+              return Wrap(spacing: 10, runSpacing: 10, children: [add, if (hasImported) remove]);
+            },
           ),
         ],
       ),
