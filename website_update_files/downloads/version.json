@@ -1,24 +1,24 @@
 {
   "schema": 2,
-  "release_id": "1.0.17-18",
-  "version": "1.0.17",
-  "build": 18,
+  "release_id": "1.0.18-19",
+  "version": "1.0.18",
+  "build": 19,
   "mandatory": false,
   "title": "Доступно обновление GhostNet Cyber VPN",
-  "message": "Обновлена фирменная техно-типографика. В регистрации Telegram username перенесён выше email и добавлено обязательное согласие с условиями использования.",
+  "message": "Новый прямой киберпанк-шрифт Tektur для бренда, заголовков, кнопок и навигации. Наклон текста полностью убран.",
   "published_at": "18.07.2026",
-  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.17-18.apk",
-  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.17-18.exe",
+  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.18-19.apk",
+  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.18-19.exe",
   "android": {
-    "version": "1.0.17",
-    "build": 18,
-    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.17-18.apk",
-    "filename": "GhostNet-Cyber-VPN-1.0.17-18.apk"
+    "version": "1.0.18",
+    "build": 19,
+    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.18-19.apk",
+    "filename": "GhostNet-Cyber-VPN-1.0.18-19.apk"
   },
   "windows": {
-    "version": "1.0.17",
-    "build": 18,
-    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.17-18.exe",
-    "filename": "GhostNet-Cyber-VPN-Setup-1.0.17-18.exe"
+    "version": "1.0.18",
+    "build": 19,
+    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.18-19.exe",
+    "filename": "GhostNet-Cyber-VPN-Setup-1.0.18-19.exe"
   }
 }

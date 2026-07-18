@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -33,14 +34,29 @@ class GhostNetApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final baseTextTheme = ThemeData(brightness: Brightness.dark).textTheme;
+    TextStyle? cyber(TextStyle? base, [FontWeight? weight]) =>
+        GoogleFonts.tektur(textStyle: base, fontWeight: weight);
+    final textTheme = baseTextTheme.copyWith(
+      displayLarge: cyber(baseTextTheme.displayLarge, FontWeight.w700),
+      displayMedium: cyber(baseTextTheme.displayMedium, FontWeight.w700),
+      displaySmall: cyber(baseTextTheme.displaySmall, FontWeight.w700),
+      headlineLarge: cyber(baseTextTheme.headlineLarge, FontWeight.w700),
+      headlineMedium: cyber(baseTextTheme.headlineMedium, FontWeight.w700),
+      headlineSmall: cyber(baseTextTheme.headlineSmall, FontWeight.w700),
+      titleLarge: cyber(baseTextTheme.titleLarge, FontWeight.w700),
+      titleMedium: cyber(baseTextTheme.titleMedium, FontWeight.w600),
+      labelLarge: cyber(baseTextTheme.labelLarge, FontWeight.w600),
+    );
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'GhostNet Cyber VPN',
       theme: ThemeData(
         useMaterial3: true,
-        fontFamily: Platform.isWindows ? 'Arial' : 'sans-serif-condensed',
         scaffoldBackgroundColor: GhostColors.black,
         brightness: Brightness.dark,
+        textTheme: textTheme,
         colorScheme: const ColorScheme.dark(
           primary: GhostColors.orange,
           secondary: GhostColors.orangeSoft,
@@ -2568,11 +2584,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   SizedBox(height: isTiny ? 16 : 20),
                   Text(
                     _registerMode ? 'Создать аккаунт' : 'Вход в аккаунт',
-                    style: TextStyle(
+                    style: GoogleFonts.tektur(
                       fontSize: titleSize,
-                      fontWeight: FontWeight.w900,
-                      fontStyle: FontStyle.italic,
-                      letterSpacing: .25,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -.2,
                       height: 1.08,
                     ),
                   ),
@@ -5870,23 +5885,21 @@ class LogoTitleBlock extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: Text(
             'GhostNet',
-            style: TextStyle(
+            style: GoogleFonts.tektur(
               fontSize: ghostSize,
-              fontWeight: FontWeight.w900,
-              fontStyle: FontStyle.italic,
-              letterSpacing: -.25,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -.35,
               shadows: const [Shadow(color: Color(0x33FF7A00), blurRadius: 12)],
             ),
           ),
         ),
         Text(
           'CYBER VPN',
-          style: TextStyle(
+          style: GoogleFonts.tektur(
             color: GhostColors.orange,
             fontSize: cyberSize,
-            fontWeight: FontWeight.w900,
-            fontStyle: FontStyle.italic,
-            letterSpacing: 3.0,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 2.5,
           ),
         ),
       ],
@@ -7314,11 +7327,10 @@ class PageTitle extends StatelessWidget {
       children: [
         Text(
           title,
-          style: TextStyle(
+          style: GoogleFonts.tektur(
             fontSize: titleSize,
-            fontWeight: FontWeight.w900,
-            fontStyle: FontStyle.italic,
-            letterSpacing: .2,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -.2,
             height: 1.08,
           ),
         ),
