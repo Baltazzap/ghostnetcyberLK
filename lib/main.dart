@@ -2438,10 +2438,8 @@ class SplashScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              LogoOrb(size: 118),
-              SizedBox(height: 22),
-              Text('GhostNet Cyber VPN', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-              SizedBox(height: 12),
+              SizedBox(width: 280, height: 280, child: Image(image: AssetImage('assets/images/logo_full.png'), fit: BoxFit.contain)),
+              SizedBox(height: 18),
               SizedBox(width: 180, child: LinearProgressIndicator(minHeight: 3)),
             ],
           ),
@@ -5846,7 +5844,7 @@ class LogoOrb extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(size * .22),
-        child: Image.asset('assets/images/logo.png', fit: BoxFit.cover),
+        child: Image.asset('assets/images/logo.png', fit: BoxFit.contain),
       ),
     );
   }

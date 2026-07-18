@@ -1,5 +1,5 @@
 name: ghostnet_cyber_vpn
-version: 1.0.13+14
+version: 1.0.15+16
 publish_to: "none"
 
 description: GhostNet Cyber VPN storefront app for Windows and Android.
@@ -30,14 +30,16 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/logo.png
+    - assets/images/logo_full.png
+    - assets/images/app_icon.png
 
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/images/logo.png"
+  image_path: "assets/images/app_icon.png"
   adaptive_icon_background: "#050505"
-  adaptive_icon_foreground: "assets/images/logo.png"
+  adaptive_icon_foreground: "assets/images/app_icon.png"
   windows:
     generate: true
-    image_path: "assets/images/logo.png"
+    image_path: "assets/images/app_icon.png"
     icon_size: 256
