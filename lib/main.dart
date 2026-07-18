@@ -5833,18 +5833,26 @@ class LogoOrb extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      padding: EdgeInsets.all(size * .06),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(size * .28),
-        gradient: const LinearGradient(colors: [Color(0xFFFF7A00), Color(0xFFFFC15A)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(size * .22),
+        border: Border.all(color: GhostColors.orange.withOpacity(.28)),
         boxShadow: [
-          BoxShadow(color: GhostColors.orange.withOpacity(.38), blurRadius: size * .38),
-          BoxShadow(color: GhostColors.orange.withOpacity(.18), blurRadius: size * .14, spreadRadius: 2),
+          BoxShadow(color: GhostColors.orange.withOpacity(.28), blurRadius: size * .30),
+          BoxShadow(color: Colors.black.withOpacity(.44), blurRadius: size * .16, offset: const Offset(0, 8)),
         ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(size * .22),
-        child: Image.asset('assets/images/logo.png', fit: BoxFit.contain),
+        child: SizedBox.expand(
+          child: Image.asset(
+            'assets/images/logo.png',
+            fit: BoxFit.contain,
+            alignment: Alignment.center,
+            filterQuality: FilterQuality.high,
+          ),
+        ),
       ),
     );
   }

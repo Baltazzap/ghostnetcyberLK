@@ -1,24 +1,24 @@
 {
   "schema": 2,
-  "release_id": "1.0.15-16",
-  "version": "1.0.15",
-  "build": 16,
+  "release_id": "1.0.16-17",
+  "version": "1.0.16",
+  "build": 17,
   "mandatory": false,
   "title": "Доступно обновление GhostNet Cyber VPN",
-  "message": "Обновлён единый логотип GhostNet Cyber в приложениях Android и Windows.",
+  "message": "Установлен официальный логотип GhostNet из предоставленного владельцем файла и исправлено его выравнивание.",
   "published_at": "18.07.2026",
-  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.15-16.apk",
-  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.15-16.exe",
+  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.16-17.apk",
+  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.16-17.exe",
   "android": {
-    "version": "1.0.15",
-    "build": 16,
-    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.15-16.apk",
-    "filename": "GhostNet-Cyber-VPN-1.0.15-16.apk"
+    "version": "1.0.16",
+    "build": 17,
+    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.16-17.apk",
+    "filename": "GhostNet-Cyber-VPN-1.0.16-17.apk"
   },
   "windows": {
-    "version": "1.0.15",
-    "build": 16,
-    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.15-16.exe",
-    "filename": "GhostNet-Cyber-VPN-Setup-1.0.15-16.exe"
+    "version": "1.0.16",
+    "build": 17,
+    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.16-17.exe",
+    "filename": "GhostNet-Cyber-VPN-Setup-1.0.16-17.exe"
   }
 }
