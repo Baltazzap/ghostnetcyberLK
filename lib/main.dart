@@ -38,7 +38,7 @@ class GhostNetApp extends StatelessWidget {
       title: 'GhostNet Cyber VPN',
       theme: ThemeData(
         useMaterial3: true,
-        fontFamily: 'Roboto',
+        fontFamily: Platform.isWindows ? 'Arial' : 'sans-serif-condensed',
         scaffoldBackgroundColor: GhostColors.black,
         brightness: Brightness.dark,
         colorScheme: const ColorScheme.dark(
@@ -79,6 +79,7 @@ const String telegramBuyUrl = 'https://t.me/GhostNetV_bot?start=pr_WELCOME';
 const String telegramBotUrl = 'https://t.me/GhostNetV_bot';
 const String newsUrl = 'https://telegram.me/ghostnetv_news';
 const String supportUrl = 'https://t.me/baltazzap';
+const String termsUrl = 'https://ghostnetcyber.ru/terms.html';
 
 const String apiBaseUrl = 'https://api.ghostnetcyber.ru';
 const String appPaymentReturnUrl = 'https://api.ghostnetcyber.ru/api/payments/yookassa/return';
@@ -2467,6 +2468,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _saving = false;
   bool _registerMode = false;
   bool _rememberMe = false;
+  bool _termsAccepted = false;
 
   @override
   void initState() {
@@ -2504,6 +2506,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
     if (_registerMode && telegram.length < 4) {
       _showSnack(context, 'Для регистрации укажите Telegram username.');
+      return;
+    }
+    if (_registerMode && !_termsAccepted) {
+      _showSnack(context, 'Подтвердите согласие с условиями использования.');
       return;
     }
 
@@ -2554,12 +2560,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   SizedBox(height: isTiny ? 18 : 22),
                   _AuthSwitcher(
                     registerMode: _registerMode,
-                    onChanged: (value) => setState(() => _registerMode = value),
+                    onChanged: (value) => setState(() {
+                      _registerMode = value;
+                      if (!value) _termsAccepted = false;
+                    }),
                   ),
                   SizedBox(height: isTiny ? 16 : 20),
                   Text(
                     _registerMode ? 'Создать аккаунт' : 'Вход в аккаунт',
-                    style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.w900, height: 1.08),
+                    style: TextStyle(
+                      fontSize: titleSize,
+                      fontWeight: FontWeight.w900,
+                      fontStyle: FontStyle.italic,
+                      letterSpacing: .25,
+                      height: 1.08,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -2569,6 +2584,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     style: const TextStyle(color: GhostColors.muted, height: 1.45),
                   ),
                   SizedBox(height: isTiny ? 18 : 22),
+                  if (_registerMode) ...[
+                    GhostTextField(controller: _telegram, label: 'Telegram username', icon: Icons.alternate_email_rounded),
+                    const SizedBox(height: 14),
+                  ],
                   GhostTextField(controller: _email, label: 'Email', icon: Icons.email_rounded),
                   const SizedBox(height: 14),
                   GhostTextField(controller: _password, label: 'Пароль', icon: Icons.lock_rounded, obscureText: true),
@@ -2602,8 +2621,42 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ],
                   if (_registerMode) ...[
-                    const SizedBox(height: 14),
-                    GhostTextField(controller: _telegram, label: 'Telegram username', icon: Icons.alternate_email_rounded),
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Checkbox(
+                          value: _termsAccepted,
+                          onChanged: _saving ? null : (value) => setState(() => _termsAccepted = value ?? false),
+                          activeColor: GhostColors.orange,
+                          checkColor: GhostColors.black,
+                          side: BorderSide(color: GhostColors.orange.withOpacity(.65), width: 1.4),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              const Text('Согласен(-а) с ', style: TextStyle(fontWeight: FontWeight.w700)),
+                              TextButton(
+                                onPressed: () => openExternal(termsUrl),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: GhostColors.orangeSoft,
+                                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
+                                  'условиями использования',
+                                  style: TextStyle(fontWeight: FontWeight.w900, decoration: TextDecoration.underline),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                   SizedBox(height: isTiny ? 18 : 22),
                   SizedBox(
@@ -2611,7 +2664,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     child: PrimaryButton(
                       text: _saving ? 'Подключаемся...' : (_registerMode ? 'Зарегистрироваться' : 'Войти'),
                       icon: _registerMode ? Icons.person_add_alt_1_rounded : Icons.login_rounded,
-                      onPressed: _saving ? null : _submit,
+                      onPressed: _saving || (_registerMode && !_termsAccepted) ? null : _submit,
                     ),
                   ),
                   if (!isTiny) ...[
@@ -5815,9 +5868,27 @@ class LogoTitleBlock extends StatelessWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          child: Text('GhostNet', style: TextStyle(fontSize: ghostSize, fontWeight: FontWeight.w900, letterSpacing: .3)),
+          child: Text(
+            'GhostNet',
+            style: TextStyle(
+              fontSize: ghostSize,
+              fontWeight: FontWeight.w900,
+              fontStyle: FontStyle.italic,
+              letterSpacing: -.25,
+              shadows: const [Shadow(color: Color(0x33FF7A00), blurRadius: 12)],
+            ),
+          ),
         ),
-        Text('CYBER VPN', style: TextStyle(color: GhostColors.orange, fontSize: cyberSize, fontWeight: FontWeight.w900, letterSpacing: 2.4)),
+        Text(
+          'CYBER VPN',
+          style: TextStyle(
+            color: GhostColors.orange,
+            fontSize: cyberSize,
+            fontWeight: FontWeight.w900,
+            fontStyle: FontStyle.italic,
+            letterSpacing: 3.0,
+          ),
+        ),
       ],
     );
   }
@@ -7241,7 +7312,16 @@ class PageTitle extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.w900, height: 1.08)),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: titleSize,
+            fontWeight: FontWeight.w900,
+            fontStyle: FontStyle.italic,
+            letterSpacing: .2,
+            height: 1.08,
+          ),
+        ),
         const SizedBox(height: 6),
         Text(subtitle, style: const TextStyle(color: GhostColors.muted, height: 1.4)),
       ],
