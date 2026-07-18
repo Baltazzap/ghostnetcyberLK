@@ -1340,6 +1340,27 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+class AuthResult {
+  final String token;
+  final String email;
+  final bool verificationRequired;
+  final bool emailVerified;
+
+  const AuthResult({
+    required this.token,
+    required this.email,
+    required this.verificationRequired,
+    required this.emailVerified,
+  });
+
+  factory AuthResult.fromJson(Map<String, dynamic> json) => AuthResult(
+        token: json['access_token']?.toString() ?? '',
+        email: json['email']?.toString() ?? '',
+        verificationRequired: json['verification_required'] == true,
+        emailVerified: json['email_verified'] != false,
+      );
+}
+
 class GhostApi {
   static Uri _uri(String path) => Uri.parse('$apiBaseUrl$path');
   static const Duration _requestTimeout = Duration(seconds: 15);
@@ -1432,19 +1453,43 @@ class GhostApi {
     return jsonDecode(utf8.decode(response.bodyBytes));
   }
 
-  static Future<String> login({required String email, required String password}) async {
+  static Future<AuthResult> login({required String email, required String password}) async {
     final data = await _post('/api/auth/login', {'email': email, 'password': password});
-    return data['access_token'].toString();
+    return AuthResult.fromJson(data);
   }
 
-  static Future<String> register({required String email, required String password, String? telegramUsername}) async {
+  static Future<AuthResult> register({required String email, required String password, String? telegramUsername}) async {
     final telegram = (telegramUsername ?? '').trim();
     final data = await _post('/api/auth/register', {
       'email': email,
       'password': password,
       'telegram_username': telegram.isEmpty ? null : telegram,
     });
-    return data['access_token'].toString();
+    return AuthResult.fromJson(data);
+  }
+
+  static Future<AuthResult> verifyEmail({required String email, required String code}) async {
+    final data = await _post('/api/auth/verify-email', {'email': email, 'code': code});
+    return AuthResult.fromJson(data);
+  }
+
+  static Future<String> resendVerification(String email) async {
+    final data = await _post('/api/auth/resend-verification', {'email': email});
+    return data['message']?.toString() ?? 'Новый код отправлен.';
+  }
+
+  static Future<String> requestPasswordReset(String email) async {
+    final data = await _post('/api/auth/password/forgot', {'email': email});
+    return data['message']?.toString() ?? 'Код восстановления отправлен.';
+  }
+
+  static Future<String> resetPassword({required String email, required String code, required String newPassword}) async {
+    final data = await _post('/api/auth/password/reset', {
+      'email': email,
+      'code': code,
+      'new_password': newPassword,
+    });
+    return data['message']?.toString() ?? 'Пароль изменён.';
   }
 
   static Future<UserProfile> me(String token) async {
@@ -2144,6 +2189,7 @@ class UserProfile {
   final bool isActive;
   final bool isAdmin;
   final bool isSupport;
+  final bool emailVerified;
 
   const UserProfile({
     required this.id,
@@ -2153,6 +2199,7 @@ class UserProfile {
     required this.isActive,
     required this.isAdmin,
     required this.isSupport,
+    required this.emailVerified,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json, String token) {
@@ -2166,6 +2213,7 @@ class UserProfile {
       isActive: json['is_active'] == true,
       isAdmin: json['is_admin'] == true,
       isSupport: json['is_support'] == true,
+      emailVerified: json['email_verified'] != false,
     );
   }
 
@@ -2356,6 +2404,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
   bool _loading = true;
   bool _updateCheckScheduled = false;
   UserProfile? _profile;
+  String? _pendingVerificationEmail;
 
   @override
   void initState() {
@@ -2374,6 +2423,16 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
     try {
       final profile = await GhostApi.me(token);
+      if (!profile.emailVerified) {
+        await AuthTokenStorage.delete();
+        if (!mounted) return;
+        setState(() {
+          _pendingVerificationEmail = profile.email;
+          _profile = null;
+          _loading = false;
+        });
+        return;
+      }
       unawaited(PushService.registerForUser(token));
       if (!mounted) return;
       setState(() {
@@ -2390,32 +2449,97 @@ class _AppBootstrapState extends State<AppBootstrap> {
     }
   }
 
-  Future<void> _login(String email, String password, bool rememberMe) async {
-    final token = await GhostApi.login(email: email, password: password);
-    final profile = await GhostApi.me(token);
-    await LoginPreferences.save(remember: rememberMe, email: email);
-    if (rememberMe) {
-      await AuthTokenStorage.write(token);
-    } else {
-      await AuthTokenStorage.delete();
+  Future<bool> _login(String email, String password, bool rememberMe) async {
+    try {
+      final result = await GhostApi.login(email: email, password: password);
+      if (result.verificationRequired || !result.emailVerified) {
+        if (mounted) setState(() => _pendingVerificationEmail = email);
+        return false;
+      }
+      final profile = await GhostApi.me(result.token);
+      await LoginPreferences.save(remember: rememberMe, email: email);
+      if (rememberMe) {
+        await AuthTokenStorage.write(result.token);
+      } else {
+        await AuthTokenStorage.delete();
+      }
+      unawaited(PushService.registerForUser(result.token));
+      if (!mounted) return true;
+      setState(() {
+        _pendingVerificationEmail = null;
+        _profile = profile;
+      });
+      return true;
+    } on ApiException catch (e) {
+      if (e.message.startsWith('EMAIL_NOT_VERIFIED|')) {
+        if (mounted) setState(() => _pendingVerificationEmail = email);
+        return false;
+      }
+      rethrow;
     }
-    unawaited(PushService.registerForUser(token));
-    if (!mounted) return;
-    setState(() => _profile = profile);
   }
 
-  Future<void> _register(String email, String password, String telegram) async {
-    final token = await GhostApi.register(
-      email: email,
-      password: password,
-      telegramUsername: telegram,
-    );
-    final profile = await GhostApi.me(token);
+  Future<bool> _register(String email, String password, String telegram) async {
+    try {
+      final result = await GhostApi.register(
+        email: email,
+        password: password,
+        telegramUsername: telegram,
+      );
+      await LoginPreferences.save(remember: true, email: email);
+      if (result.verificationRequired || !result.emailVerified) {
+        await AuthTokenStorage.delete();
+        if (mounted) {
+          setState(() {
+            _pendingVerificationEmail = email;
+            _profile = null;
+          });
+        }
+        return false;
+      }
+      final profile = await GhostApi.me(result.token);
+      await AuthTokenStorage.write(result.token);
+      unawaited(PushService.registerForUser(result.token));
+      if (!mounted) return true;
+      setState(() {
+        _pendingVerificationEmail = null;
+        _profile = profile;
+      });
+      return true;
+    } on ApiException catch (e) {
+      if (e.message.startsWith('EMAIL_NOT_VERIFIED|')) {
+        await LoginPreferences.save(remember: true, email: email);
+        await AuthTokenStorage.delete();
+        if (mounted) {
+          setState(() {
+            _pendingVerificationEmail = email;
+            _profile = null;
+          });
+        }
+        return false;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _verifyEmail(String email, String code) async {
+    final result = await GhostApi.verifyEmail(email: email, code: code);
+    if (result.token.isEmpty) throw const ApiException('API не вернул токен доступа.');
+    final profile = await GhostApi.me(result.token);
     await LoginPreferences.save(remember: true, email: email);
-    await AuthTokenStorage.write(token);
-    unawaited(PushService.registerForUser(token));
+    await AuthTokenStorage.write(result.token);
+    unawaited(PushService.registerForUser(result.token));
     if (!mounted) return;
-    setState(() => _profile = profile);
+    setState(() {
+      _pendingVerificationEmail = null;
+      _profile = profile;
+    });
+  }
+
+  Future<String> _resendVerification(String email) => GhostApi.resendVerification(email);
+
+  void _cancelVerification() {
+    setState(() => _pendingVerificationEmail = null);
   }
 
   Future<void> _logout() async {
@@ -2439,6 +2563,15 @@ class _AppBootstrapState extends State<AppBootstrap> {
   Widget build(BuildContext context) {
     if (_loading) return const SplashScreen();
     _scheduleUpdateCheck();
+    final pendingEmail = _pendingVerificationEmail;
+    if (pendingEmail != null && pendingEmail.isNotEmpty) {
+      return EmailVerificationScreen(
+        email: pendingEmail,
+        onVerify: _verifyEmail,
+        onResend: _resendVerification,
+        onBack: _cancelVerification,
+      );
+    }
     if (_profile == null) return RegisterScreen(onLogin: _login, onRegister: _register);
     return MainShell(profile: _profile!, onLogout: _logout);
   }
@@ -2468,8 +2601,8 @@ class SplashScreen extends StatelessWidget {
 
 
 class RegisterScreen extends StatefulWidget {
-  final Future<void> Function(String email, String password, bool rememberMe) onLogin;
-  final Future<void> Function(String email, String password, String telegram) onRegister;
+  final Future<bool> Function(String email, String password, bool rememberMe) onLogin;
+  final Future<bool> Function(String email, String password, String telegram) onRegister;
 
   const RegisterScreen({super.key, required this.onLogin, required this.onRegister});
 
@@ -2532,11 +2665,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _saving = true);
     try {
       if (_registerMode) {
-        await widget.onRegister(email, password, telegram);
-        if (mounted) _showSnack(context, 'Аккаунт создан.');
+        final authenticated = await widget.onRegister(email, password, telegram);
+        if (mounted && authenticated) _showSnack(context, 'Аккаунт создан.');
       } else {
-        await widget.onLogin(email, password, _rememberMe);
-        if (mounted) _showSnack(context, 'Вход выполнен.');
+        final authenticated = await widget.onLogin(email, password, _rememberMe);
+        if (mounted && authenticated) _showSnack(context, 'Вход выполнен.');
       }
     } catch (e) {
       if (mounted) _showSnack(context, e.toString().replaceFirst('Exception: ', ''));
@@ -2634,6 +2767,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ),
                     ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _saving
+                            ? null
+                            : () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => PasswordRecoveryScreen(initialEmail: _email.text.trim()),
+                                  ),
+                                ),
+                        style: TextButton.styleFrom(foregroundColor: GhostColors.orangeSoft),
+                        child: const Text('Забыли пароль?', style: TextStyle(fontWeight: FontWeight.w900)),
+                      ),
+                    ),
                   ],
                   if (_registerMode) ...[
                     const SizedBox(height: 10),
@@ -2722,6 +2869,392 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+
+class EmailVerificationScreen extends StatefulWidget {
+  final String email;
+  final Future<void> Function(String email, String code) onVerify;
+  final Future<String> Function(String email) onResend;
+  final VoidCallback onBack;
+
+  const EmailVerificationScreen({
+    super.key,
+    required this.email,
+    required this.onVerify,
+    required this.onResend,
+    required this.onBack,
+  });
+
+  @override
+  State<EmailVerificationScreen> createState() => _EmailVerificationScreenState();
+}
+
+class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
+  final _code = TextEditingController();
+  bool _saving = false;
+  int _cooldown = 0;
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _code.dispose();
+    super.dispose();
+  }
+
+  void _startCooldown([int seconds = 60]) {
+    _timer?.cancel();
+    setState(() => _cooldown = seconds);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return timer.cancel();
+      if (_cooldown <= 1) {
+        timer.cancel();
+        setState(() => _cooldown = 0);
+      } else {
+        setState(() => _cooldown -= 1);
+      }
+    });
+  }
+
+  Future<void> _verify() async {
+    final code = _code.text.replaceAll(RegExp(r'\D'), '');
+    if (code.length != 6) {
+      _showSnack(context, 'Введите шестизначный код из письма.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await widget.onVerify(widget.email, code);
+      if (mounted) _showSnack(context, 'Email подтверждён.');
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _resend() async {
+    if (_saving || _cooldown > 0) return;
+    setState(() => _saving = true);
+    try {
+      final message = await widget.onResend(widget.email);
+      if (mounted) {
+        _showSnack(context, message);
+        _startCooldown();
+      }
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      resizeToAvoidBottomInset: true,
+      body: CyberBackground(
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.fromLTRB(18, 24, 18, 30),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight - 54),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 470),
+                  child: PremiumCard(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            LogoOrb(size: 62),
+                            SizedBox(width: 12),
+                            Expanded(child: LogoTitleBlock(compact: true)),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        const MiniBadge(text: 'ПОДТВЕРЖДЕНИЕ EMAIL'),
+                        const SizedBox(height: 14),
+                        Text(
+                          'Введите код из письма',
+                          style: GoogleFonts.tektur(fontSize: 28, fontWeight: FontWeight.w700, height: 1.08),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Мы отправили шестизначный код на ${widget.email}. Код действует 15 минут.',
+                          style: const TextStyle(color: GhostColors.muted, height: 1.5),
+                        ),
+                        const SizedBox(height: 22),
+                        TextField(
+                          controller: _code,
+                          autofocus: true,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+                          onSubmitted: (_) => _verify(),
+                          style: GoogleFonts.tektur(fontSize: 24, fontWeight: FontWeight.w700, letterSpacing: 8),
+                          textAlign: TextAlign.center,
+                          decoration: InputDecoration(
+                            labelText: 'Код подтверждения',
+                            hintText: '000000',
+                            filled: true,
+                            fillColor: Colors.black.withOpacity(.28),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide(color: Colors.white.withOpacity(.07))),
+                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: const BorderSide(color: GhostColors.orange, width: 1.4)),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          width: double.infinity,
+                          child: PrimaryButton(
+                            text: _saving ? 'Проверяем...' : 'Подтвердить email',
+                            icon: Icons.mark_email_read_rounded,
+                            onPressed: _saving ? null : _verify,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: SecondaryButton(
+                            text: _cooldown > 0 ? 'Отправить повторно через $_cooldown сек.' : 'Отправить код повторно',
+                            icon: Icons.refresh_rounded,
+                            onPressed: _saving || _cooldown > 0 ? null : _resend,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Center(
+                          child: TextButton.icon(
+                            onPressed: _saving ? null : widget.onBack,
+                            icon: const Icon(Icons.arrow_back_rounded),
+                            label: const Text('Вернуться ко входу'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PasswordRecoveryScreen extends StatefulWidget {
+  final String initialEmail;
+
+  const PasswordRecoveryScreen({super.key, this.initialEmail = ''});
+
+  @override
+  State<PasswordRecoveryScreen> createState() => _PasswordRecoveryScreenState();
+}
+
+class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
+  late final TextEditingController _email;
+  final _code = TextEditingController();
+  final _newPassword = TextEditingController();
+  final _confirmPassword = TextEditingController();
+  bool _codeSent = false;
+  bool _saving = false;
+  int _cooldown = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _email = TextEditingController(text: widget.initialEmail.trim().toLowerCase());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _email.dispose();
+    _code.dispose();
+    _newPassword.dispose();
+    _confirmPassword.dispose();
+    super.dispose();
+  }
+
+  void _startCooldown([int seconds = 60]) {
+    _timer?.cancel();
+    setState(() => _cooldown = seconds);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return timer.cancel();
+      if (_cooldown <= 1) {
+        timer.cancel();
+        setState(() => _cooldown = 0);
+      } else {
+        setState(() => _cooldown -= 1);
+      }
+    });
+  }
+
+  Future<void> _requestCode() async {
+    final email = _email.text.trim().toLowerCase();
+    if (!email.contains('@') || !email.contains('.')) {
+      _showSnack(context, 'Введите корректный email.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final message = await GhostApi.requestPasswordReset(email);
+      if (!mounted) return;
+      setState(() => _codeSent = true);
+      _startCooldown();
+      _showSnack(context, message);
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    final email = _email.text.trim().toLowerCase();
+    final code = _code.text.replaceAll(RegExp(r'\D'), '');
+    final password = _newPassword.text;
+    if (code.length != 6) {
+      _showSnack(context, 'Введите шестизначный код.');
+      return;
+    }
+    if (password.length < 6) {
+      _showSnack(context, 'Новый пароль должен содержать минимум 6 символов.');
+      return;
+    }
+    if (password != _confirmPassword.text) {
+      _showSnack(context, 'Пароли не совпадают.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final message = await GhostApi.resetPassword(email: email, code: code, newPassword: password);
+      if (!mounted) return;
+      _showSnack(context, message);
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      resizeToAvoidBottomInset: true,
+      body: CyberBackground(
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.fromLTRB(18, 24, 18, 30),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight - 54),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 470),
+                  child: PremiumCard(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            IconButton(
+                              onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.arrow_back_rounded),
+                            ),
+                            const SizedBox(width: 6),
+                            const Expanded(child: LogoTitleBlock(compact: true)),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        const MiniBadge(text: 'ВОССТАНОВЛЕНИЕ ДОСТУПА'),
+                        const SizedBox(height: 14),
+                        Text(
+                          _codeSent ? 'Создайте новый пароль' : 'Забыли пароль?',
+                          style: GoogleFonts.tektur(fontSize: 28, fontWeight: FontWeight.w700, height: 1.08),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _codeSent
+                              ? 'Введите код из письма и новый пароль. После смены пароля старые сессии будут завершены.'
+                              : 'Укажите email аккаунта. Мы отправим шестизначный код восстановления.',
+                          style: const TextStyle(color: GhostColors.muted, height: 1.5),
+                        ),
+                        const SizedBox(height: 22),
+                        GhostTextField(controller: _email, label: 'Email', icon: Icons.email_rounded),
+                        if (_codeSent) ...[
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _code,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+                            style: GoogleFonts.tektur(fontSize: 21, fontWeight: FontWeight.w700, letterSpacing: 6),
+                            textAlign: TextAlign.center,
+                            decoration: InputDecoration(
+                              labelText: 'Код из письма',
+                              hintText: '000000',
+                              filled: true,
+                              fillColor: Colors.black.withOpacity(.28),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide(color: Colors.white.withOpacity(.07))),
+                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: const BorderSide(color: GhostColors.orange, width: 1.4)),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          GhostTextField(controller: _newPassword, label: 'Новый пароль', icon: Icons.lock_reset_rounded, obscureText: true),
+                          const SizedBox(height: 14),
+                          GhostTextField(controller: _confirmPassword, label: 'Повторите пароль', icon: Icons.lock_rounded, obscureText: true),
+                        ],
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: PrimaryButton(
+                            text: _saving
+                                ? 'Подождите...'
+                                : (_codeSent ? 'Изменить пароль' : 'Получить код'),
+                            icon: _codeSent ? Icons.password_rounded : Icons.mark_email_unread_rounded,
+                            onPressed: _saving ? null : (_codeSent ? _resetPassword : _requestCode),
+                          ),
+                        ),
+                        if (_codeSent) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SecondaryButton(
+                              text: _cooldown > 0 ? 'Повторная отправка через $_cooldown сек.' : 'Отправить код повторно',
+                              icon: Icons.refresh_rounded,
+                              onPressed: _saving || _cooldown > 0 ? null : _requestCode,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Center(
+                            child: TextButton(
+                              onPressed: _saving ? null : () => setState(() => _codeSent = false),
+                              child: const Text('Изменить email'),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
