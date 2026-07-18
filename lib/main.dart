@@ -1492,6 +1492,42 @@ class GhostApi {
     return data['message']?.toString() ?? 'Пароль изменён.';
   }
 
+  static Future<String> requestCurrentEmailVerification(String token) async {
+    final data = await _post('/api/profile/email/verification/request', {}, token: token);
+    return data['message']?.toString() ?? 'Код подтверждения отправлен.';
+  }
+
+  static Future<AuthResult> confirmCurrentEmailVerification({required String token, required String code}) async {
+    final data = await _post('/api/profile/email/verification/confirm', {'code': code}, token: token);
+    return AuthResult.fromJson(data);
+  }
+
+  static Future<String> requestEmailChange({required String token, required String newEmail}) async {
+    final data = await _post('/api/profile/email/change/request', {'new_email': newEmail}, token: token);
+    return data['message']?.toString() ?? 'Код отправлен на новый email.';
+  }
+
+  static Future<AuthResult> confirmEmailChange({required String token, required String newEmail, required String code}) async {
+    final data = await _post('/api/profile/email/change/confirm', {
+      'new_email': newEmail,
+      'code': code,
+    }, token: token);
+    return AuthResult.fromJson(data);
+  }
+
+  static Future<AuthResult> changePassword({required String token, required String currentPassword, required String newPassword}) async {
+    final data = await _post('/api/profile/password/change', {
+      'current_password': currentPassword,
+      'new_password': newPassword,
+    }, token: token);
+    return AuthResult.fromJson(data);
+  }
+
+  static Future<String> logoutAllDevices(String token) async {
+    final data = await _post('/api/profile/sessions/logout-all', {}, token: token);
+    return data['message']?.toString() ?? 'Все сессии завершены.';
+  }
+
   static Future<UserProfile> me(String token) async {
     final data = await _get('/api/me', token: token);
     if (data is Map<String, dynamic>) return UserProfile.fromJson(data, token);
@@ -2573,7 +2609,13 @@ class _AppBootstrapState extends State<AppBootstrap> {
       );
     }
     if (_profile == null) return RegisterScreen(onLogin: _login, onRegister: _register);
-    return MainShell(profile: _profile!, onLogout: _logout);
+    return MainShell(
+      profile: _profile!,
+      onLogout: _logout,
+      onProfileUpdated: (profile) {
+        if (mounted) setState(() => _profile = profile);
+      },
+    );
   }
 }
 
@@ -3383,8 +3425,14 @@ class RegisterHero extends StatelessWidget {
 class MainShell extends StatefulWidget {
   final UserProfile profile;
   final VoidCallback onLogout;
+  final ValueChanged<UserProfile> onProfileUpdated;
 
-  const MainShell({super.key, required this.profile, required this.onLogout});
+  const MainShell({
+    super.key,
+    required this.profile,
+    required this.onLogout,
+    required this.onProfileUpdated,
+  });
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -3414,7 +3462,13 @@ class _MainShellState extends State<MainShell> {
     final pages = [
       HomePage(profile: widget.profile, onOpenTariffs: () => setState(() => _index = 1), onOpenAccount: () => setState(() => _index = 2), onOpenGuide: () => setState(() => _index = 3), onOpenSupport: () => setState(() => _index = 4), onOpenNews: () => openExternal(newsUrl)),
       TariffsPage(profile: widget.profile, onOpenAccount: () => setState(() => _index = 2)),
-      AccountPage(profile: widget.profile, onLogout: widget.onLogout, onOpenTariffs: () => setState(() => _index = 1), onOpenSupport: () => setState(() => _index = 4)),
+      AccountPage(
+        profile: widget.profile,
+        onLogout: widget.onLogout,
+        onProfileUpdated: widget.onProfileUpdated,
+        onOpenTariffs: () => setState(() => _index = 1),
+        onOpenSupport: () => setState(() => _index = 4),
+      ),
       InstructionsPage(profile: widget.profile, onOpenAccount: () => setState(() => _index = 2), onOpenTariffs: () => setState(() => _index = 1)),
       HelpPage(profile: widget.profile),
       if (showAdmin) AdminPage(profile: widget.profile),
@@ -4187,10 +4241,18 @@ class _TariffsPageState extends State<TariffsPage> {
 class AccountPage extends StatelessWidget {
   final UserProfile profile;
   final VoidCallback onLogout;
+  final ValueChanged<UserProfile> onProfileUpdated;
   final VoidCallback onOpenTariffs;
   final VoidCallback onOpenSupport;
 
-  const AccountPage({super.key, required this.profile, required this.onLogout, required this.onOpenTariffs, required this.onOpenSupport});
+  const AccountPage({
+    super.key,
+    required this.profile,
+    required this.onLogout,
+    required this.onProfileUpdated,
+    required this.onOpenTariffs,
+    required this.onOpenSupport,
+  });
 
   Future<void> _openNotifications(BuildContext context) async {
     await showDialog(
@@ -4226,9 +4288,230 @@ class AccountPage extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
+          AccountSecurityCard(
+            profile: profile,
+            onProfileUpdated: onProfileUpdated,
+            onLogout: onLogout,
+          ),
+          const SizedBox(height: 16),
           ManualSubscriptionImportCard(profile: profile),
           const SizedBox(height: 16),
           ReferralProgramCard(profile: profile),
+        ],
+      ),
+    );
+  }
+}
+
+
+class AccountSecurityCard extends StatefulWidget {
+  final UserProfile profile;
+  final ValueChanged<UserProfile> onProfileUpdated;
+  final VoidCallback onLogout;
+
+  const AccountSecurityCard({
+    super.key,
+    required this.profile,
+    required this.onProfileUpdated,
+    required this.onLogout,
+  });
+
+  @override
+  State<AccountSecurityCard> createState() => _AccountSecurityCardState();
+}
+
+class _AccountSecurityCardState extends State<AccountSecurityCard> {
+  bool _busy = false;
+
+  Future<String?> _promptText({
+    required String title,
+    required String label,
+    String initialValue = '',
+    bool obscure = false,
+    TextInputType? keyboardType,
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          obscureText: obscure,
+          keyboardType: keyboardType,
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(labelText: label),
+          onSubmitted: (text) => Navigator.pop(dialogContext, text.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Продолжить')),
+        ],
+      ),
+    );
+    controller.dispose();
+    return value;
+  }
+
+  Future<void> _applyAuthResult(AuthResult result) async {
+    if (result.token.isEmpty) throw const ApiException('API не вернул новый токен доступа.');
+    final remember = await LoginPreferences.rememberMe();
+    await LoginPreferences.save(remember: remember, email: result.email);
+    if (remember) {
+      await AuthTokenStorage.write(result.token);
+    } else {
+      await AuthTokenStorage.delete();
+    }
+    final profile = await GhostApi.me(result.token);
+    widget.onProfileUpdated(profile);
+  }
+
+  Future<void> _confirmEmail() async {
+    if (widget.profile.emailVerified) {
+      _showSnack(context, 'Email уже подтверждён.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await GhostApi.requestCurrentEmailVerification(widget.profile.token);
+      if (!mounted) return;
+      final code = await _promptText(title: 'Подтверждение email', label: 'Код из письма', keyboardType: TextInputType.number);
+      if (code == null || code.replaceAll(RegExp(r'\D'), '').length != 6) return;
+      final result = await GhostApi.confirmCurrentEmailVerification(token: widget.profile.token, code: code);
+      await _applyAuthResult(result);
+      if (mounted) _showSnack(context, 'Email подтверждён.');
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _changeEmail() async {
+    final email = await _promptText(
+      title: 'Смена email',
+      label: 'Новый email',
+      keyboardType: TextInputType.emailAddress,
+    );
+    if (email == null || email.isEmpty) return;
+    if (!RegExp(r'^\S+@\S+\.\S+$').hasMatch(email)) {
+      if (mounted) _showSnack(context, 'Введите корректный email.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await GhostApi.requestEmailChange(token: widget.profile.token, newEmail: email);
+      if (!mounted) return;
+      final code = await _promptText(
+        title: 'Подтвердите новый email',
+        label: 'Шестизначный код',
+        keyboardType: TextInputType.number,
+      );
+      final normalizedCode = code?.replaceAll(RegExp(r'\D'), '') ?? '';
+      if (normalizedCode.length != 6) return;
+      final result = await GhostApi.confirmEmailChange(
+        token: widget.profile.token,
+        newEmail: email,
+        code: normalizedCode,
+      );
+      await _applyAuthResult(result);
+      if (mounted) _showSnack(context, 'Email изменён и подтверждён.');
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _changePassword() async {
+    final current = await _promptText(title: 'Смена пароля', label: 'Текущий пароль', obscure: true);
+    if (current == null || current.isEmpty) return;
+    final next = await _promptText(title: 'Новый пароль', label: 'Минимум 6 символов', obscure: true);
+    if (next == null || next.length < 6) {
+      if (mounted) _showSnack(context, 'Новый пароль должен содержать минимум 6 символов.');
+      return;
+    }
+    final repeat = await _promptText(title: 'Повторите пароль', label: 'Новый пароль ещё раз', obscure: true);
+    if (repeat != next) {
+      if (mounted) _showSnack(context, 'Пароли не совпадают.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final result = await GhostApi.changePassword(
+        token: widget.profile.token,
+        currentPassword: current,
+        newPassword: next,
+      );
+      await _applyAuthResult(result);
+      if (mounted) _showSnack(context, 'Пароль изменён. Остальные сессии завершены.');
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _logoutAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Выйти со всех устройств?'),
+        content: const Text('Все активные токены будут отозваны. На этом устройстве тоже потребуется повторный вход.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Выйти везде')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _busy = true);
+    try {
+      await GhostApi.logoutAllDevices(widget.profile.token);
+      await AuthTokenStorage.delete();
+      widget.onLogout();
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final verified = widget.profile.emailVerified;
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MiniBadge(text: 'БЕЗОПАСНОСТЬ АККАУНТА'),
+          const SizedBox(height: 14),
+          const Text('Email и пароль', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          Text(widget.profile.email, style: const TextStyle(color: GhostColors.muted, height: 1.4)),
+          const SizedBox(height: 16),
+          StatusLine(
+            label: 'Статус email',
+            value: verified ? 'Подтверждён' : 'Не подтверждён',
+            color: verified ? GhostColors.success : GhostColors.danger,
+          ),
+          const SizedBox(height: 16),
+          SecondaryButton(
+            text: verified ? 'Email подтверждён' : 'Подтвердить Email',
+            icon: verified ? Icons.verified_rounded : Icons.mark_email_unread_rounded,
+            onPressed: _busy || verified ? null : _confirmEmail,
+          ),
+          const SizedBox(height: 10),
+          SecondaryButton(text: 'Сменить email', icon: Icons.alternate_email_rounded, onPressed: _busy ? null : _changeEmail),
+          const SizedBox(height: 10),
+          SecondaryButton(text: 'Сменить пароль', icon: Icons.password_rounded, onPressed: _busy ? null : _changePassword),
+          const SizedBox(height: 10),
+          SecondaryButton(text: 'Выйти со всех устройств', icon: Icons.phonelink_erase_rounded, onPressed: _busy ? null : _logoutAll),
+          if (_busy) ...[
+            const SizedBox(height: 14),
+            const LinearProgressIndicator(minHeight: 3),
+          ],
         ],
       ),
     );
