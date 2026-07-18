@@ -2987,11 +2987,31 @@ class _VpnPageState extends State<VpnPage> {
   }
 
   Future<void> _removeManualSubscription() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить подписку?'),
+        content: const Text(
+          'Импортированная ссылка, тариф и сохранённые данные будут удалены только с этого устройства. Подписка в аккаунте GhostNet останется активной.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Удалить', style: TextStyle(color: GhostColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_manualSubscriptionKey);
+    await ManualSubscriptionMeta.clear();
+    manualSubscriptionRevision.value++;
     _manualSubscriptionUrl = null;
     _manualSubscriptionController.clear();
-    if (mounted) _showSnack(context, 'Импортированная подписка удалена.');
+    if (mounted) _showSnack(context, 'Импортированная подписка удалена с устройства.');
     await _initialize();
   }
 
@@ -3152,8 +3172,9 @@ class _VpnPageState extends State<VpnPage> {
                 onPressed: _importingSubscription ? null : _saveManualSubscription,
               );
               final remove = SecondaryButton(
-                text: 'Удалить',
+                text: 'Удалить подписку',
                 icon: Icons.delete_outline_rounded,
+                danger: true,
                 onPressed: _importingSubscription || !hasImported ? null : _removeManualSubscription,
               );
               if (constraints.maxWidth < 520) {
@@ -3633,17 +3654,41 @@ class _ManualSubscriptionImportCardState extends State<ManualSubscriptionImportC
   }
 
   Future<void> _remove() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_manualSubscriptionKey);
-    await ManualSubscriptionMeta.clear();
-    manualSubscriptionRevision.value++;
-    if (!mounted) return;
-    setState(() {
-      _savedUrl = null;
-      _controller.clear();
-      _message = 'Импортированная ссылка удалена.';
-      _success = true;
-    });
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить вставленную подписку?'),
+        content: const Text(
+          'Ссылка, определённый тариф и локальный кэш будут удалены с этого устройства. Реальная подписка в аккаунте GhostNet не удаляется и не отменяется.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Удалить', style: TextStyle(color: GhostColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_manualSubscriptionKey);
+      await ManualSubscriptionMeta.clear();
+      manualSubscriptionRevision.value++;
+      if (!mounted) return;
+      setState(() {
+        _savedUrl = null;
+        _controller.clear();
+        _message = 'Вставленная подписка удалена с этого устройства.';
+        _success = true;
+      });
+      _showSnack(context, 'Вставленная подписка удалена.');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -3699,8 +3744,9 @@ class _ManualSubscriptionImportCardState extends State<ManualSubscriptionImportC
                 onPressed: _loading || _saving ? null : _save,
               );
               final remove = SecondaryButton(
-                text: 'Удалить',
+                text: 'Удалить подписку',
                 icon: Icons.delete_outline_rounded,
+                danger: true,
                 onPressed: _loading || _saving || !hasSaved ? null : _remove,
               );
               if (constraints.maxWidth < 520) {
@@ -7188,20 +7234,23 @@ class SecondaryButton extends StatelessWidget {
   final String text;
   final VoidCallback? onPressed;
   final IconData? icon;
+  final bool danger;
 
-  const SecondaryButton({super.key, required this.text, required this.onPressed, this.icon});
+  const SecondaryButton({super.key, required this.text, required this.onPressed, this.icon, this.danger = false});
 
   @override
   Widget build(BuildContext context) {
+    final accent = danger ? GhostColors.danger : GhostColors.orange;
     return OutlinedButton.icon(
       style: OutlinedButton.styleFrom(
-        foregroundColor: GhostColors.text,
-        side: BorderSide(color: GhostColors.orange.withOpacity(.38)),
+        foregroundColor: danger ? const Color(0xFFFF9A9A) : GhostColors.text,
+        backgroundColor: danger ? GhostColors.danger.withOpacity(.07) : null,
+        side: BorderSide(color: accent.withOpacity(.42)),
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       onPressed: onPressed,
-      icon: Icon(icon ?? Icons.open_in_new_rounded, color: GhostColors.orange),
+      icon: Icon(icon ?? Icons.open_in_new_rounded, color: accent),
       label: Text(text, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
     );
   }
