@@ -1,5 +1,5 @@
 name: ghostnet_cyber_vpn
-version: 1.0.20+21
+version: 1.0.21+22
 publish_to: "none"
 
 description: GhostNet Cyber VPN storefront app for Windows and Android.

@@ -1,24 +1,24 @@
 {
   "schema": 2,
-  "release_id": "1.0.20-21",
-  "version": "1.0.20",
-  "build": 21,
+  "release_id": "1.0.21-22",
+  "version": "1.0.21",
+  "build": 22,
   "mandatory": false,
   "title": "Доступно обновление GhostNet Cyber VPN",
-  "message": "Аккаунт создаётся только после подтверждения email. В кабинете добавлены статус email, смена email, смена пароля и выход со всех устройств.",
-  "published_at": "18.07.2026",
-  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.20-21.apk",
-  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.20-21.exe",
+  "message": "Интерфейс Android и Windows синхронизирован с iPhone-версией. Добавлены отдельный раздел ключей и подразделы кабинета и админ-панели.",
+  "published_at": "19.07.2026",
+  "android_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.21-22.apk",
+  "windows_url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.21-22.exe",
   "android": {
-    "version": "1.0.20",
-    "build": 21,
-    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.20-21.apk",
-    "filename": "GhostNet-Cyber-VPN-1.0.20-21.apk"
+    "version": "1.0.21",
+    "build": 22,
+    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-1.0.21-22.apk",
+    "filename": "GhostNet-Cyber-VPN-1.0.21-22.apk"
   },
   "windows": {
-    "version": "1.0.20",
-    "build": 21,
-    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.20-21.exe",
-    "filename": "GhostNet-Cyber-VPN-Setup-1.0.20-21.exe"
+    "version": "1.0.21",
+    "build": 22,
+    "url": "https://ghostnetcyber.ru/downloads/GhostNet-Cyber-VPN-Setup-1.0.21-22.exe",
+    "filename": "GhostNet-Cyber-VPN-Setup-1.0.21-22.exe"
   }
 }

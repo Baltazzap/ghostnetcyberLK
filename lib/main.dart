@@ -3453,24 +3453,52 @@ class _MainShellState extends State<MainShell> {
     if (paymentId == null || !mounted) return;
     final result = await showPaymentStatusDialog(context, widget.profile.token, paymentId);
     await prefs.remove(_pendingPaymentKey);
-    if (result == true && mounted) setState(() => _index = 2);
+    if (result == true && mounted) setState(() => _index = 4);
+  }
+
+  Future<void> _openSupport() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          body: CyberBackground(child: HelpPage(profile: widget.profile)),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final showAdmin = widget.profile.isAdmin || widget.profile.isSupport;
     final pages = [
-      HomePage(profile: widget.profile, onOpenTariffs: () => setState(() => _index = 1), onOpenAccount: () => setState(() => _index = 2), onOpenGuide: () => setState(() => _index = 3), onOpenSupport: () => setState(() => _index = 4), onOpenNews: () => openExternal(newsUrl)),
-      TariffsPage(profile: widget.profile, onOpenAccount: () => setState(() => _index = 2)),
+      HomePage(
+        profile: widget.profile,
+        onOpenTariffs: () => setState(() => _index = 1),
+        onOpenKeys: () => setState(() => _index = 2),
+        onOpenGuide: () => setState(() => _index = 3),
+        onOpenSupport: _openSupport,
+        onOpenNews: () => openExternal(newsUrl),
+      ),
+      TariffsPage(profile: widget.profile, onOpenAccount: () => setState(() => _index = 4)),
+      VpnPage(
+        profile: widget.profile,
+        onOpenTariffs: () => setState(() => _index = 1),
+        onOpenAccount: () => setState(() => _index = 4),
+      ),
+      InstructionsPage(
+        profile: widget.profile,
+        onOpenAccount: () => setState(() => _index = 2),
+        onOpenTariffs: () => setState(() => _index = 1),
+      ),
       AccountPage(
         profile: widget.profile,
         onLogout: widget.onLogout,
         onProfileUpdated: widget.onProfileUpdated,
         onOpenTariffs: () => setState(() => _index = 1),
-        onOpenSupport: () => setState(() => _index = 4),
+        onOpenKeys: () => setState(() => _index = 2),
+        onOpenSupport: _openSupport,
+        onOpenNews: () => openExternal(newsUrl),
+        onOpenAdmin: showAdmin ? () => setState(() => _index = 5) : null,
       ),
-      InstructionsPage(profile: widget.profile, onOpenAccount: () => setState(() => _index = 2), onOpenTariffs: () => setState(() => _index = 1)),
-      HelpPage(profile: widget.profile),
       if (showAdmin) AdminPage(profile: widget.profile),
     ];
     if (_index >= pages.length) _index = 0;
@@ -3502,12 +3530,20 @@ class _MainShellState extends State<MainShell> {
 class HomePage extends StatelessWidget {
   final UserProfile profile;
   final VoidCallback onOpenTariffs;
-  final VoidCallback onOpenAccount;
+  final VoidCallback onOpenKeys;
   final VoidCallback onOpenGuide;
   final VoidCallback onOpenSupport;
   final VoidCallback onOpenNews;
 
-  const HomePage({super.key, required this.profile, required this.onOpenTariffs, required this.onOpenAccount, required this.onOpenGuide, required this.onOpenSupport, required this.onOpenNews});
+  const HomePage({
+    super.key,
+    required this.profile,
+    required this.onOpenTariffs,
+    required this.onOpenKeys,
+    required this.onOpenGuide,
+    required this.onOpenSupport,
+    required this.onOpenNews,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -3517,9 +3553,15 @@ class HomePage extends StatelessWidget {
         children: [
           HeaderBar(profile: profile),
           const SizedBox(height: 18),
-          HomeHeroCard(profile: profile, onOpenTariffs: onOpenTariffs, onOpenAccount: onOpenAccount),
+          HomeHeroCard(profile: profile, onOpenTariffs: onOpenTariffs, onOpenKeys: onOpenKeys),
           const SizedBox(height: 16),
-          QuickActionsGrid(onOpenTariffs: onOpenTariffs, onOpenAccount: onOpenAccount, onOpenGuide: onOpenGuide, onOpenSupport: onOpenSupport, onOpenNews: onOpenNews),
+          QuickActionsGrid(
+            onOpenTariffs: onOpenTariffs,
+            onOpenKeys: onOpenKeys,
+            onOpenGuide: onOpenGuide,
+            onOpenSupport: onOpenSupport,
+            onOpenNews: onOpenNews,
+          ),
           const SizedBox(height: 16),
           const StatsGrid(),
           const SizedBox(height: 18),
@@ -3531,7 +3573,6 @@ class HomePage extends StatelessWidget {
     );
   }
 }
-
 
 class VpnServerItem {
   final String name;
@@ -3834,16 +3875,54 @@ class _VpnPageState extends State<VpnPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const PageTitle(
-            title: 'GhostNet VPN',
-            subtitle: 'Рабочие ключи доступны здесь. Встроенный VPN переводим на новый core, чтобы не было фейкового подключения.',
+            title: 'Мои ключи',
+            subtitle: 'Подписка, серверы и быстрый импорт — отдельный раздел как в iPhone-версии.',
           ),
           const SizedBox(height: 16),
-          _buildCoreNotice(),
+          _buildManualSubscriptionCard(),
           const SizedBox(height: 16),
           _buildVpnCard(),
           const SizedBox(height: 16),
           _buildServerList(),
+          const SizedBox(height: 16),
+          _buildClientCard(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildClientCard() {
+    final isWindows = Platform.isWindows;
+    final title = isWindows ? 'Hiddify для Windows' : 'Hiddify / v2RayTun для Android';
+    final subtitle = isWindows
+        ? 'Скопируйте подписку GhostNet и добавьте её как новый профиль.'
+        : 'Скопируйте подписку и импортируйте её из буфера или по URL.';
+    final url = isWindows ? 'https://github.com/hiddify/hiddify-app/releases' : 'https://play.google.com/store/apps/details?id=app.hiddify.com';
+    return PremiumCard(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final info = Row(
+            children: [
+              CircleIcon(icon: isWindows ? Icons.desktop_windows_rounded : Icons.android_rounded),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 4),
+                    Text(subtitle, style: const TextStyle(color: GhostColors.muted, height: 1.35)),
+                  ],
+                ),
+              ),
+            ],
+          );
+          final action = SecondaryButton(text: 'Открыть', icon: Icons.open_in_new_rounded, onPressed: () => openExternal(url));
+          if (constraints.maxWidth < 520) {
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [info, const SizedBox(height: 12), Center(child: action)]);
+          }
+          return Row(children: [Expanded(child: info), const SizedBox(width: 12), action]);
+        },
       ),
     );
   }
@@ -4238,12 +4317,91 @@ class _TariffsPageState extends State<TariffsPage> {
   }
 }
 
-class AccountPage extends StatelessWidget {
+class GhostSubsectionItem {
+  final String id;
+  final String label;
+  final IconData icon;
+
+  const GhostSubsectionItem(this.id, this.label, this.icon);
+}
+
+class GhostSubsectionMenu extends StatelessWidget {
+  final String selected;
+  final List<GhostSubsectionItem> items;
+  final ValueChanged<String> onSelect;
+  final bool vertical;
+
+  const GhostSubsectionMenu({
+    super.key,
+    required this.selected,
+    required this.items,
+    required this.onSelect,
+    this.vertical = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget buildButton(GhostSubsectionItem item) {
+      final active = item.id == selected;
+      return Padding(
+        padding: EdgeInsets.only(right: vertical ? 0 : 8, bottom: vertical ? 8 : 0),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => onSelect(item.id),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 170),
+            width: vertical ? double.infinity : null,
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              color: active ? GhostColors.orange.withOpacity(.17) : Colors.black.withOpacity(.18),
+              border: Border.all(
+                color: active ? GhostColors.orange.withOpacity(.55) : Colors.white.withOpacity(.07),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: vertical ? MainAxisSize.max : MainAxisSize.min,
+              children: [
+                Icon(item.icon, size: 18, color: active ? GhostColors.orangeSoft : GhostColors.muted),
+                const SizedBox(width: 8),
+                Text(
+                  item.label,
+                  style: TextStyle(
+                    color: active ? GhostColors.text : GhostColors.muted,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12.5,
+                  ),
+                ),
+                if (vertical) const Spacer(),
+                if (vertical && active) const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: GhostColors.orange),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return PremiumCard(
+      padding: const EdgeInsets.all(8),
+      child: vertical
+          ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: items.map(buildButton).toList())
+          : SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: items.map(buildButton).toList()),
+            ),
+    );
+  }
+}
+
+class AccountPage extends StatefulWidget {
   final UserProfile profile;
   final VoidCallback onLogout;
   final ValueChanged<UserProfile> onProfileUpdated;
   final VoidCallback onOpenTariffs;
+  final VoidCallback onOpenKeys;
   final VoidCallback onOpenSupport;
+  final VoidCallback onOpenNews;
+  final VoidCallback? onOpenAdmin;
 
   const AccountPage({
     super.key,
@@ -4251,14 +4409,94 @@ class AccountPage extends StatelessWidget {
     required this.onLogout,
     required this.onProfileUpdated,
     required this.onOpenTariffs,
+    required this.onOpenKeys,
     required this.onOpenSupport,
+    required this.onOpenNews,
+    this.onOpenAdmin,
   });
 
-  Future<void> _openNotifications(BuildContext context) async {
+  @override
+  State<AccountPage> createState() => _AccountPageState();
+}
+
+class _AccountPageState extends State<AccountPage> {
+  String _section = 'overview';
+  bool _refreshing = false;
+
+  static const _items = [
+    GhostSubsectionItem('overview', 'Обзор', Icons.dashboard_rounded),
+    GhostSubsectionItem('subscription', 'Подписка', Icons.vpn_key_rounded),
+    GhostSubsectionItem('security', 'Безопасность', Icons.shield_rounded),
+    GhostSubsectionItem('referrals', 'Рефералы', Icons.group_add_rounded),
+    GhostSubsectionItem('settings', 'Настройки', Icons.tune_rounded),
+  ];
+
+  Future<void> _openNotifications() async {
     await showDialog(
       context: context,
-      builder: (_) => NotificationsDialog(profile: profile),
+      builder: (_) => NotificationsDialog(profile: widget.profile),
     );
+  }
+
+  Future<void> _refreshProfile() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      final profile = await GhostApi.me(widget.profile.token);
+      widget.onProfileUpdated(profile);
+      if (mounted) _showSnack(context, 'Данные кабинета обновлены.');
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  Widget _buildSection() {
+    switch (_section) {
+      case 'subscription':
+        return Column(
+          children: [
+            SubscriptionStatusCard(profile: widget.profile, onOpenTariffs: widget.onOpenTariffs),
+            const SizedBox(height: 16),
+            ManualSubscriptionImportCard(profile: widget.profile),
+          ],
+        );
+      case 'security':
+        return AccountSecurityCard(
+          profile: widget.profile,
+          onProfileUpdated: widget.onProfileUpdated,
+          onLogout: widget.onLogout,
+        );
+      case 'referrals':
+        return ReferralProgramCard(profile: widget.profile);
+      case 'settings':
+        return AccountActions(
+          profile: widget.profile,
+          onLogout: widget.onLogout,
+          onOpenTariffs: widget.onOpenTariffs,
+          onOpenSupport: widget.onOpenSupport,
+          onOpenNotifications: _openNotifications,
+          onOpenAdmin: widget.onOpenAdmin,
+          onOpenNews: widget.onOpenNews,
+          onRefresh: _refreshProfile,
+          refreshing: _refreshing,
+        );
+      case 'overview':
+      default:
+        return Column(
+          children: [
+            AccountHero(profile: widget.profile),
+            const SizedBox(height: 16),
+            AccountOverviewCard(
+              profile: widget.profile,
+              onOpenTariffs: widget.onOpenTariffs,
+              onOpenKeys: widget.onOpenKeys,
+              onOpenSupport: widget.onOpenSupport,
+            ),
+          ],
+        );
+    }
   }
 
   @override
@@ -4267,42 +4505,108 @@ class AccountPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const PageTitle(title: 'Личный кабинет', subtitle: 'Профиль, подписка, ключи и быстрые действия.'),
-          const SizedBox(height: 16),
-          AccountHero(profile: profile),
+          const PageTitle(title: 'Личный кабинет', subtitle: 'Аккаунт разделён на понятные разделы — как в iPhone-версии.'),
           const SizedBox(height: 16),
           LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth > 720;
-              final status = SubscriptionStatusCard(profile: profile, onOpenTariffs: onOpenTariffs);
-              final actions = AccountActions(onLogout: onLogout, onOpenTariffs: onOpenTariffs, onOpenSupport: onOpenSupport, onOpenNotifications: () => _openNotifications(context));
-              if (!wide) return Column(children: [status, const SizedBox(height: 16), actions]);
+              final wide = constraints.maxWidth >= 900;
+              if (!wide) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    GhostSubsectionMenu(selected: _section, items: _items, onSelect: (value) => setState(() => _section = value)),
+                    const SizedBox(height: 16),
+                    AnimatedSwitcher(duration: const Duration(milliseconds: 180), child: KeyedSubtree(key: ValueKey(_section), child: _buildSection())),
+                  ],
+                );
+              }
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: SubscriptionStatusCard(profile: profile, onOpenTariffs: onOpenTariffs)),
+                  SizedBox(
+                    width: 230,
+                    child: GhostSubsectionMenu(
+                      selected: _section,
+                      items: _items,
+                      vertical: true,
+                      onSelect: (value) => setState(() => _section = value),
+                    ),
+                  ),
                   const SizedBox(width: 16),
-                  Expanded(child: AccountActions(onLogout: onLogout, onOpenTariffs: onOpenTariffs, onOpenSupport: onOpenSupport, onOpenNotifications: () => _openNotifications(context))),
+                  Expanded(child: AnimatedSwitcher(duration: const Duration(milliseconds: 180), child: KeyedSubtree(key: ValueKey(_section), child: _buildSection()))),
                 ],
               );
             },
           ),
-          const SizedBox(height: 16),
-          AccountSecurityCard(
-            profile: profile,
-            onProfileUpdated: onProfileUpdated,
-            onLogout: onLogout,
-          ),
-          const SizedBox(height: 16),
-          ManualSubscriptionImportCard(profile: profile),
-          const SizedBox(height: 16),
-          ReferralProgramCard(profile: profile),
         ],
       ),
     );
   }
 }
 
+class AccountOverviewCard extends StatelessWidget {
+  final UserProfile profile;
+  final VoidCallback onOpenTariffs;
+  final VoidCallback onOpenKeys;
+  final VoidCallback onOpenSupport;
+
+  const AccountOverviewCard({
+    super.key,
+    required this.profile,
+    required this.onOpenTariffs,
+    required this.onOpenKeys,
+    required this.onOpenSupport,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final role = profile.isAdmin ? 'Администратор' : profile.isSupport ? 'Поддержка' : 'Пользователь';
+    return PremiumCard(
+      highlighted: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MiniBadge(text: 'ОБЗОР АККАУНТА'),
+          const SizedBox(height: 14),
+          const Text('Управление GhostNet', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 14),
+          StatusLine(
+            label: 'Email',
+            value: profile.emailVerified ? 'Подтверждён' : 'Не подтверждён',
+            color: profile.emailVerified ? GhostColors.success : GhostColors.danger,
+          ),
+          const SizedBox(height: 10),
+          StatusLine(label: 'Telegram', value: profile.telegram.isEmpty ? 'Не указан' : profile.telegram),
+          const SizedBox(height: 10),
+          StatusLine(label: 'Роль', value: role),
+          const SizedBox(height: 18),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = constraints.maxWidth < 560;
+              final buttons = [
+                PrimaryButton(text: 'Мои ключи', icon: Icons.vpn_key_rounded, onPressed: onOpenKeys),
+                SecondaryButton(text: 'Тарифы', icon: Icons.local_offer_rounded, onPressed: onOpenTariffs),
+                SecondaryButton(text: 'Поддержка', icon: Icons.support_agent_rounded, onPressed: onOpenSupport),
+              ];
+              if (narrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < buttons.length; i++) ...[
+                      Center(child: buttons[i]),
+                      if (i != buttons.length - 1) const SizedBox(height: 10),
+                    ],
+                  ],
+                );
+              }
+              return Wrap(spacing: 10, runSpacing: 10, children: buttons);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class AccountSecurityCard extends StatefulWidget {
   final UserProfile profile;
@@ -5808,6 +6112,7 @@ class _AdminPageState extends State<AdminPage> {
   AdminReferralStats? _referralStats;
   List<SupportTicketInfo> _tickets = [];
   bool _loading = true;
+  String _adminSection = 'overview';
   final _planCode = TextEditingController();
   final _planName = TextEditingController();
   final _planPrice = TextEditingController();
@@ -6187,226 +6492,319 @@ class _AdminPageState extends State<AdminPage> {
     _showSnack(context, 'Поля промокода очищены.');
   }
 
+  List<GhostSubsectionItem> get _adminItems => widget.profile.isAdmin
+      ? const [
+          GhostSubsectionItem('overview', 'Обзор', Icons.dashboard_rounded),
+          GhostSubsectionItem('users', 'Пользователи', Icons.people_alt_rounded),
+          GhostSubsectionItem('plans', 'Тарифы', Icons.local_offer_rounded),
+          GhostSubsectionItem('promos', 'Промокоды', Icons.confirmation_number_rounded),
+          GhostSubsectionItem('tickets', 'Поддержка', Icons.support_agent_rounded),
+          GhostSubsectionItem('tools', 'Сервис', Icons.build_circle_rounded),
+        ]
+      : const [GhostSubsectionItem('tickets', 'Поддержка', Icons.support_agent_rounded)];
+
+  Widget _buildAdminOverview() {
+    if (_overview == null) {
+      return const PremiumCard(
+        child: Text('Данные обзора пока недоступны.', style: TextStyle(color: GhostColors.muted)),
+      );
+    }
+    return Column(
+      children: [
+        AdminCompactStatsLine(overview: _overview!),
+        if (_referralStats != null) ...[
+          const SizedBox(height: 16),
+          AdminReferralPanel(stats: _referralStats!),
+        ],
+        const SizedBox(height: 16),
+        PremiumCard(
+          highlighted: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const MiniBadge(text: 'БЫСТРЫЙ ОБЗОР'),
+              const SizedBox(height: 14),
+              const Text('Состояние GhostNet', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 14),
+              StatusLine(label: 'Пользователей', value: '${_overview!.users}'),
+              const SizedBox(height: 10),
+              StatusLine(label: 'Активных подписок', value: '${_overview!.activeSubscriptions}', color: GhostColors.success),
+              const SizedBox(height: 10),
+              StatusLine(label: 'Платежей', value: '${_overview!.payments}'),
+              const SizedBox(height: 10),
+              StatusLine(label: 'Открытых обращений', value: '${_overview!.ticketsOpen}', color: _overview!.ticketsOpen > 0 ? GhostColors.gold : GhostColors.success),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAdminPlans() {
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MiniBadge(text: 'ТАРИФЫ'),
+          const SizedBox(height: 14),
+          const Text('Магазин тарифов', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 14),
+          LayoutBuilder(builder: (context, constraints) {
+            final wide = constraints.maxWidth > 760;
+            final fields = [
+              wide ? Expanded(child: GhostTextField(controller: _planCode, label: 'Код, например ghost_net', icon: Icons.code_rounded)) : GhostTextField(controller: _planCode, label: 'Код, например ghost_net', icon: Icons.code_rounded),
+              const SizedBox(width: 12, height: 12),
+              wide ? Expanded(child: GhostTextField(controller: _planName, label: 'Название', icon: Icons.badge_rounded)) : GhostTextField(controller: _planName, label: 'Название', icon: Icons.badge_rounded),
+              const SizedBox(width: 12, height: 12),
+              SizedBox(width: wide ? 130 : double.infinity, child: GhostTextField(controller: _planPrice, label: 'Цена ₽', icon: Icons.payments_rounded)),
+              const SizedBox(width: 12, height: 12),
+              SizedBox(width: wide ? 120 : double.infinity, child: GhostTextField(controller: _planDays, label: 'Дней', icon: Icons.calendar_month_rounded)),
+            ];
+            return wide ? Row(children: fields) : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: fields);
+          }),
+          const SizedBox(height: 12),
+          GhostTextField(controller: _planDescription, label: 'Описание тарифа', icon: Icons.description_rounded, maxLines: 2),
+          const SizedBox(height: 12),
+          Wrap(spacing: 10, runSpacing: 10, children: [
+            PrimaryButton(text: 'Добавить тариф', icon: Icons.add_rounded, onPressed: _savePlan),
+            SecondaryButton(text: 'Очистить поля', icon: Icons.clear_rounded, onPressed: _clearPlanFields),
+          ]),
+          const SizedBox(height: 16),
+          if (_plans.isEmpty) const Text('Тарифов пока нет.', style: TextStyle(color: GhostColors.muted)),
+          ..._plans.map((plan) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Container(
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(.035),
+                borderRadius: BorderRadius.circular(17),
+                border: Border.all(color: Colors.white.withOpacity(.07)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: Text('${plan.name} — ${plan.priceRub} ₽ / ${plan.durationDays} дн.', style: const TextStyle(fontWeight: FontWeight.w900))),
+                  CompactStatusPill(text: plan.isActive ? 'ВКЛ.' : 'ВЫКЛ.', active: plan.isActive),
+                ]),
+                const SizedBox(height: 6),
+                Text('${plan.code}${plan.description.isNotEmpty ? ' • ${plan.description}' : ''}', style: const TextStyle(color: GhostColors.muted, height: 1.35)),
+                const SizedBox(height: 10),
+                Wrap(spacing: 7, runSpacing: 7, children: [
+                  MiniActionButton(label: 'Изменить', icon: Icons.edit_rounded, onTap: () => _editPlan(plan)),
+                  MiniActionButton(label: plan.isActive ? 'Выключить' : 'Включить', icon: plan.isActive ? Icons.toggle_off_rounded : Icons.toggle_on_rounded, onTap: () => _togglePlan(plan)),
+                  MiniActionButton(label: 'Удалить', icon: Icons.delete_rounded, danger: true, onTap: () => _deletePlan(plan)),
+                ]),
+              ]),
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminPromos() {
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MiniBadge(text: 'ПРОМОКОДЫ'),
+          const SizedBox(height: 14),
+          const Text('Скидки и акции', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 14),
+          LayoutBuilder(builder: (context, constraints) {
+            final wide = constraints.maxWidth > 720;
+            final codeField = GhostTextField(controller: _promoCode, label: 'Код', icon: Icons.confirmation_number_rounded);
+            final discountField = GhostTextField(controller: _promoDiscount, label: 'Скидка %', icon: Icons.percent_rounded);
+            final buttons = Row(children: [
+              Expanded(child: CompactButton(text: 'Создать', icon: Icons.add_rounded, filled: true, onPressed: _createPromo)),
+              const SizedBox(width: 10),
+              Expanded(child: CompactButton(text: 'Очистить', icon: Icons.clear_rounded, onPressed: _clearPromoFields)),
+            ]);
+            if (wide) {
+              return Row(children: [Expanded(child: codeField), const SizedBox(width: 12), SizedBox(width: 150, child: discountField), const SizedBox(width: 12), SizedBox(width: 250, child: buttons)]);
+            }
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [codeField, const SizedBox(height: 10), discountField, const SizedBox(height: 10), buttons]);
+          }),
+          const SizedBox(height: 16),
+          if (_promos.isEmpty) const Text('Промокодов пока нет.', style: TextStyle(color: GhostColors.muted)),
+          ..._promos.map((promo) => Padding(
+            padding: const EdgeInsets.only(bottom: 9),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.white.withOpacity(.035), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(.07))),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: Text('${promo.code} — ${promo.discountPercent}%', style: const TextStyle(fontWeight: FontWeight.w900))),
+                  CompactStatusPill(text: promo.isActive ? 'ВКЛ.' : 'ВЫКЛ.', active: promo.isActive),
+                ]),
+                const SizedBox(height: 9),
+                Wrap(spacing: 7, runSpacing: 7, children: [
+                  MiniActionButton(label: promo.isActive ? 'Выключить' : 'Включить', icon: promo.isActive ? Icons.toggle_off_rounded : Icons.toggle_on_rounded, onTap: () => _togglePromo(promo)),
+                  MiniActionButton(label: 'Удалить', icon: Icons.delete_rounded, danger: true, onTap: () => _deletePromo(promo.code)),
+                ]),
+              ]),
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminUsers() {
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MiniBadge(text: 'ПОЛЬЗОВАТЕЛИ И РОЛИ'),
+          const SizedBox(height: 14),
+          const Text('Управление аккаунтами', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 14),
+          LayoutBuilder(builder: (context, constraints) {
+            final wide = constraints.maxWidth > 620;
+            final search = GhostTextField(controller: _userSearch, label: 'Email / Telegram / ID', icon: Icons.search_rounded);
+            final buttons = Row(children: [
+              Expanded(child: CompactButton(text: 'Найти', icon: Icons.search_rounded, onPressed: _load)),
+              const SizedBox(width: 10),
+              Expanded(child: CompactButton(text: 'Сброс', icon: Icons.clear_rounded, onPressed: () { _userSearch.clear(); _load(); })),
+            ]);
+            return wide ? Row(children: [Expanded(child: search), const SizedBox(width: 10), SizedBox(width: 210, child: buttons)]) : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [search, const SizedBox(height: 10), buttons]);
+          }),
+          const SizedBox(height: 14),
+          if (_users.isEmpty) const Text('Пользователи не найдены.', style: TextStyle(color: GhostColors.muted)),
+          ..._users.take(80).map((user) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.white.withOpacity(.03), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(.07))),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: GhostColors.orange.withOpacity(.12), borderRadius: BorderRadius.circular(12), border: Border.all(color: GhostColors.orange.withOpacity(.22))),
+                    child: Text('#${user.id}', style: const TextStyle(color: GhostColors.orangeSoft, fontSize: 11, fontWeight: FontWeight.w900)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(user.email, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 2),
+                    Text(user.telegram.isEmpty ? 'Telegram не указан' : user.telegram, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: GhostColors.muted, fontSize: 12)),
+                  ])),
+                  CompactStatusPill(text: user.isActive ? 'активен' : 'блок', active: user.isActive),
+                ]),
+                const SizedBox(height: 9),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  if (user.isAdmin) const CompactStatusPill(text: 'admin', active: true),
+                  if (user.isSupport) const CompactStatusPill(text: 'support', active: true),
+                ]),
+                const SizedBox(height: 9),
+                Wrap(spacing: 7, runSpacing: 7, children: [
+                  MiniActionButton(label: user.isAdmin ? 'Убрать админа' : 'Сделать админом', icon: Icons.admin_panel_settings_rounded, onTap: () => _setRole(user, 'admin', !user.isAdmin)),
+                  MiniActionButton(label: user.isSupport ? 'Убрать поддержку' : 'Сделать поддержкой', icon: Icons.support_agent_rounded, onTap: () => _setRole(user, 'support', !user.isSupport)),
+                  MiniActionButton(label: user.isActive ? 'Заблокировать' : 'Разблокировать', icon: user.isActive ? Icons.block_rounded : Icons.lock_open_rounded, onTap: () => _setRole(user, 'active', !user.isActive)),
+                  MiniActionButton(label: 'Ключи', icon: Icons.vpn_key_rounded, onTap: () => _openKeys(user)),
+                  MiniActionButton(label: 'Удалить', icon: Icons.delete_forever_rounded, danger: true, onTap: () => _deleteUser(user)),
+                ]),
+              ]),
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminTickets() {
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [MiniBadge(text: 'ОБРАЩЕНИЯ ПОДДЕРЖКИ'), SizedBox(height: 8), Text('Чаты пользователей', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900))])),
+            IconButton(onPressed: _load, tooltip: 'Обновить', icon: const Icon(Icons.refresh_rounded, color: GhostColors.orange)),
+          ]),
+          const SizedBox(height: 14),
+          if (_tickets.isEmpty) const Text('Нет обращений.', style: TextStyle(color: GhostColors.muted)),
+          ..._tickets.take(50).map((ticket) => Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: Colors.white.withOpacity(.035), borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.white.withOpacity(.07))),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [Expanded(child: Text('#${ticket.id} ${ticket.subject}', style: const TextStyle(fontWeight: FontWeight.w900))), CompactStatusPill(text: ticket.status.toUpperCase(), active: ticket.status != 'closed')]),
+                const SizedBox(height: 6),
+                Text('${ticket.userName} · ${ticket.userEmail}', style: const TextStyle(color: GhostColors.muted, fontSize: 12)),
+                const SizedBox(height: 8),
+                ...ticket.messages.take(3).map((message) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(message.isStaff ? 'Поддержка: ${message.message}' : '${ticket.userName}: ${message.message}', style: TextStyle(color: message.isStaff ? GhostColors.orangeSoft : GhostColors.muted, height: 1.35)),
+                )),
+                const SizedBox(height: 10),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  MiniActionButton(label: 'Открыть чат', icon: Icons.chat_rounded, onTap: () => _openTicket(ticket)),
+                  if (ticket.status != 'closed') MiniActionButton(label: 'Закрыть', icon: Icons.lock_rounded, onTap: () => _closeTicket(ticket.id)),
+                  if (widget.profile.isAdmin) MiniActionButton(label: 'Удалить', icon: Icons.delete_rounded, danger: true, onTap: () => _deleteTicket(ticket)),
+                ]),
+              ]),
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminTools() {
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MiniBadge(text: 'СЕРВИСНЫЕ ДЕЙСТВИЯ'),
+          const SizedBox(height: 14),
+          const Text('Обслуживание API', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          const Text('Эти операции влияют на реальные данные. Проверяйте действие перед подтверждением.', style: TextStyle(color: GhostColors.muted, height: 1.4)),
+          const SizedBox(height: 16),
+          SecondaryButton(text: 'Проверить подписки', icon: Icons.auto_delete_rounded, onPressed: _runMaintenance),
+          const SizedBox(height: 10),
+          SecondaryButton(text: 'Очистить историю платежей', icon: Icons.cleaning_services_rounded, onPressed: _clearPaymentsHistory),
+          const SizedBox(height: 10),
+          SecondaryButton(text: 'Удалить все обращения', icon: Icons.delete_sweep_rounded, danger: true, onPressed: _tickets.isEmpty ? null : _deleteAllTickets),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminSection() {
+    switch (_adminSection) {
+      case 'users': return _buildAdminUsers();
+      case 'plans': return _buildAdminPlans();
+      case 'promos': return _buildAdminPromos();
+      case 'tickets': return _buildAdminTickets();
+      case 'tools': return _buildAdminTools();
+      case 'overview':
+      default: return _buildAdminOverview();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final items = _adminItems;
+    if (!widget.profile.isAdmin && _adminSection != 'tickets') _adminSection = 'tickets';
     return PageWrap(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          PageTitle(title: widget.profile.isAdmin ? 'Админ-панель' : 'Панель поддержки', subtitle: widget.profile.isAdmin ? 'Тарифы, пользователи, роли, промокоды, ключи и поддержка.' : 'Обращения пользователей и ответы в чате.'),
+          PageTitle(
+            title: widget.profile.isAdmin ? 'Админ-панель' : 'Панель поддержки',
+            subtitle: widget.profile.isAdmin ? 'Все инструменты разделены на отдельные подразделы.' : 'Обращения пользователей и ответы в чате.',
+          ),
+          const SizedBox(height: 16),
+          GhostSubsectionMenu(selected: _adminSection, items: items, onSelect: (value) => setState(() => _adminSection = value)),
           const SizedBox(height: 16),
           if (_loading) const LinearProgressIndicator(minHeight: 3),
-          if (!_loading && _overview != null) Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            AdminCompactStatsLine(overview: _overview!),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: CompactButton(text: 'Очистить платежи', icon: Icons.cleaning_services_rounded, onPressed: _clearPaymentsHistory)),
-              const SizedBox(width: 10),
-              Expanded(child: CompactButton(text: 'Проверить подписки', icon: Icons.auto_delete_rounded, onPressed: _runMaintenance)),
-            ]),
-          ]),
-          if (widget.profile.isAdmin) ...[
-            if (_referralStats != null) ...[
-              const SizedBox(height: 16),
-              AdminReferralPanel(stats: _referralStats!),
-            ],
-            const SizedBox(height: 16),
-            PremiumCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const MiniBadge(text: 'ТАРИФЫ'),
-              const SizedBox(height: 14),
-              LayoutBuilder(builder: (context, constraints) {
-                final wide = constraints.maxWidth > 760;
-                final fields = [
-                  wide ? Expanded(child: GhostTextField(controller: _planCode, label: 'Код, например ghost_net', icon: Icons.code_rounded)) : GhostTextField(controller: _planCode, label: 'Код, например ghost_net', icon: Icons.code_rounded),
-                  const SizedBox(width: 12, height: 12),
-                  wide ? Expanded(child: GhostTextField(controller: _planName, label: 'Название', icon: Icons.badge_rounded)) : GhostTextField(controller: _planName, label: 'Название', icon: Icons.badge_rounded),
-                  const SizedBox(width: 12, height: 12),
-                  SizedBox(width: wide ? 130 : double.infinity, child: GhostTextField(controller: _planPrice, label: 'Цена ₽', icon: Icons.payments_rounded)),
-                  const SizedBox(width: 12, height: 12),
-                  SizedBox(width: wide ? 120 : double.infinity, child: GhostTextField(controller: _planDays, label: 'Дней', icon: Icons.calendar_month_rounded)),
-                ];
-                return wide ? Row(children: fields) : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: fields);
-              }),
-              const SizedBox(height: 12),
-              GhostTextField(controller: _planDescription, label: 'Описание тарифа', icon: Icons.description_rounded, maxLines: 2),
-              const SizedBox(height: 12),
-              Wrap(spacing: 12, runSpacing: 12, children: [
-                PrimaryButton(text: 'Добавить / сохранить тариф', icon: Icons.add_rounded, onPressed: _savePlan),
-                SecondaryButton(text: 'Очистить', icon: Icons.clear_rounded, onPressed: _clearPlanFields),
-              ]),
-              const SizedBox(height: 14),
-              if (_plans.isEmpty) const Text('Тарифов пока нет.', style: TextStyle(color: GhostColors.muted)),
-              ..._plans.map((p) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(.035), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(.07))),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Expanded(child: Text('${p.name} — ${p.priceRub} ₽ / ${p.durationDays} дн.', style: const TextStyle(fontWeight: FontWeight.w900))),
-                      MiniBadge(text: p.isActive ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'),
-                    ]),
-                    const SizedBox(height: 6),
-                    Text('${p.code}${p.description.isNotEmpty ? ' • ${p.description}' : ''}', style: const TextStyle(color: GhostColors.muted, height: 1.35)),
-                    const SizedBox(height: 10),
-                    Wrap(spacing: 7, runSpacing: 7, children: [
-                      MiniActionButton(label: 'Изменить тариф', icon: Icons.edit_rounded, onTap: () => _editPlan(p)),
-                      MiniActionButton(label: p.isActive ? 'Выключить тариф' : 'Включить тариф', icon: p.isActive ? Icons.toggle_off_rounded : Icons.toggle_on_rounded, onTap: () => _togglePlan(p)),
-                      MiniActionButton(label: 'Удалить тариф', icon: Icons.delete_rounded, danger: true, onTap: () => _deletePlan(p)),
-                    ]),
-                  ]),
-                ),
-              )),
-            ])),
-            const SizedBox(height: 16),
-            PremiumCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const MiniBadge(text: 'ПРОМОКОДЫ'),
-              const SizedBox(height: 14),
-              LayoutBuilder(builder: (context, constraints) {
-                final wide = constraints.maxWidth > 720;
-                final codeField = GhostTextField(controller: _promoCode, label: 'Код', icon: Icons.confirmation_number_rounded);
-                final discountField = GhostTextField(controller: _promoDiscount, label: 'Скидка %', icon: Icons.percent_rounded);
-                final buttons = Row(children: [
-                  Expanded(child: CompactButton(text: 'Создать', icon: Icons.add_rounded, filled: true, onPressed: _createPromo)),
-                  const SizedBox(width: 10),
-                  Expanded(child: CompactButton(text: 'Очистить', icon: Icons.clear_rounded, onPressed: _clearPromoFields)),
-                ]);
-                if (wide) {
-                  return Row(children: [
-                    Expanded(child: codeField),
-                    const SizedBox(width: 12),
-                    SizedBox(width: 150, child: discountField),
-                    const SizedBox(width: 12),
-                    SizedBox(width: 250, child: buttons),
-                  ]);
-                }
-                return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  codeField,
-                  const SizedBox(height: 10),
-                  discountField,
-                  const SizedBox(height: 10),
-                  buttons,
-                ]);
-              }),
-              const SizedBox(height: 14),
-              ..._promos.map((p) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(children: [
-                  Expanded(child: Text('${p.code} — ${p.discountPercent}% ${p.isActive ? '(включён)' : '(выключен)'}')),
-                  SecondaryButton(text: p.isActive ? 'Выключить' : 'Включить', icon: p.isActive ? Icons.toggle_off_rounded : Icons.toggle_on_rounded, onPressed: () => _togglePromo(p)),
-                  const SizedBox(width: 8),
-                  SecondaryButton(text: 'Удалить', icon: Icons.delete_rounded, onPressed: () => _deletePromo(p.code)),
-                ]),
-              ))
-            ])),
-            const SizedBox(height: 16),
-            PremiumCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const MiniBadge(text: 'ПОЛЬЗОВАТЕЛИ И РОЛИ'),
-              const SizedBox(height: 14),
-              LayoutBuilder(builder: (context, constraints) {
-                final wide = constraints.maxWidth > 620;
-                final search = GhostTextField(controller: _userSearch, label: 'Поиск по email / Telegram / ID', icon: Icons.search_rounded);
-                final buttons = Row(children: [
-                  Expanded(child: CompactButton(text: 'Найти', icon: Icons.search_rounded, onPressed: _load)),
-                  const SizedBox(width: 10),
-                  Expanded(child: CompactButton(text: 'Сброс', icon: Icons.clear_rounded, onPressed: () { _userSearch.clear(); _load(); })),
-                ]);
-                return wide
-                    ? Row(children: [Expanded(child: search), const SizedBox(width: 10), SizedBox(width: 210, child: buttons)])
-                    : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [search, const SizedBox(height: 10), buttons]);
-              }),
-              const SizedBox(height: 14),
-              ..._users.take(80).map((u) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(.03),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withOpacity(.07)),
-                  ),
-                  child: LayoutBuilder(builder: (context, constraints) {
-                    final wide = constraints.maxWidth > 560;
-                    final info = Row(children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: GhostColors.orange.withOpacity(.12),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: GhostColors.orange.withOpacity(.22)),
-                        ),
-                        child: Text('#${u.id}', style: const TextStyle(color: GhostColors.orangeSoft, fontSize: 11, fontWeight: FontWeight.w900)),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(u.email, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
-                        const SizedBox(height: 2),
-                        Text(u.telegram.isEmpty ? 'Telegram не указан' : u.telegram, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: GhostColors.muted, fontSize: 12, height: 1.2)),
-                      ])),
-                    ]);
-                    final roles = Wrap(spacing: 6, runSpacing: 6, children: [
-                      CompactStatusPill(text: u.isActive ? 'активен' : 'заблокирован', active: u.isActive),
-                      if (u.isAdmin) const CompactStatusPill(text: 'admin', active: true),
-                      if (u.isSupport) const CompactStatusPill(text: 'support', active: true),
-                    ]);
-                    final actions = Wrap(spacing: 7, runSpacing: 7, children: [
-                      MiniActionButton(label: u.isAdmin ? 'Убрать админа' : 'Сделать админом', icon: Icons.admin_panel_settings_rounded, onTap: () => _setRole(u, 'admin', !u.isAdmin)),
-                      MiniActionButton(label: u.isSupport ? 'Убрать поддержку' : 'Сделать поддержкой', icon: Icons.support_agent_rounded, onTap: () => _setRole(u, 'support', !u.isSupport)),
-                      MiniActionButton(label: u.isActive ? 'Заблокировать' : 'Разблокировать', icon: u.isActive ? Icons.block_rounded : Icons.lock_open_rounded, onTap: () => _setRole(u, 'active', !u.isActive)),
-                      MiniActionButton(label: 'Ключи', icon: Icons.vpn_key_rounded, onTap: () => _openKeys(u)),
-                      MiniActionButton(label: 'Удалить пользователя', icon: Icons.delete_forever_rounded, danger: true, onTap: () => _deleteUser(u)),
-                    ]);
-                    if (wide) {
-                      return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                        Expanded(flex: 4, child: info),
-                        const SizedBox(width: 10),
-                        Expanded(flex: 2, child: roles),
-                        const SizedBox(width: 10),
-                        actions,
-                      ]);
-                    }
-                    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      info,
-                      const SizedBox(height: 7),
-                      roles,
-                      const SizedBox(height: 7),
-                      actions,
-                    ]);
-                  }),
-                ),
-              )),
-            ])),
-          ],
-          const SizedBox(height: 16),
-          PremiumCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              const Expanded(child: MiniBadge(text: 'ОБРАЩЕНИЯ ПОДДЕРЖКИ')),
-              if (widget.profile.isAdmin && _tickets.isNotEmpty)
-                SecondaryButton(text: 'Удалить все обращения', icon: Icons.delete_sweep_rounded, onPressed: _deleteAllTickets),
-            ]),
-            const SizedBox(height: 14),
-            if (_tickets.isEmpty) const Text('Нет обращений.', style: TextStyle(color: GhostColors.muted)),
-            ..._tickets.take(50).map((t) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(.035), borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.white.withOpacity(.07))),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [Expanded(child: Text('#${t.id} ${t.subject}', style: const TextStyle(fontWeight: FontWeight.w900))), MiniBadge(text: t.status.toUpperCase())]),
-                  const SizedBox(height: 8),
-                  ...t.messages.take(5).map((m) => Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(m.isStaff ? 'Поддержка GhostNet: ${m.message}' : '${t.userName} (${t.userEmail}): ${m.message}', style: TextStyle(color: m.isStaff ? GhostColors.orangeSoft : GhostColors.muted, height: 1.35)))),
-                  const SizedBox(height: 10),
-                  Wrap(spacing: 8, runSpacing: 8, children: [
-                    PrimaryButton(text: 'Открыть чат', icon: Icons.chat_rounded, onPressed: () => _openTicket(t)),
-                    if (t.status != 'closed') SecondaryButton(text: 'Закрыть', icon: Icons.lock_rounded, onPressed: () => _closeTicket(t.id)),
-                    if (widget.profile.isAdmin) SecondaryButton(text: 'Удалить обращение', icon: Icons.delete_rounded, onPressed: () => _deleteTicket(t)),
-                  ]),
-                ]),
-              ),
-            )),
-          ])),
+          if (!_loading) AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: KeyedSubtree(key: ValueKey(_adminSection), child: _buildAdminSection()),
+          ),
         ],
       ),
     );
@@ -6872,9 +7270,9 @@ class MiniActionButton extends StatelessWidget {
 class HomeHeroCard extends StatefulWidget {
   final UserProfile profile;
   final VoidCallback onOpenTariffs;
-  final VoidCallback onOpenAccount;
+  final VoidCallback onOpenKeys;
 
-  const HomeHeroCard({super.key, required this.profile, required this.onOpenTariffs, required this.onOpenAccount});
+  const HomeHeroCard({super.key, required this.profile, required this.onOpenTariffs, required this.onOpenKeys});
 
   @override
   State<HomeHeroCard> createState() => _HomeHeroCardState();
@@ -6901,9 +7299,7 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
     super.dispose();
   }
 
-  void _handleManualSubscriptionChanged() {
-    _loadDashboard();
-  }
+  void _handleManualSubscriptionChanged() => _loadDashboard();
 
   Future<void> _loadDashboard() async {
     setState(() {
@@ -6949,7 +7345,7 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
         success: true,
       );
       await _loadDashboard();
-      widget.onOpenAccount();
+      widget.onOpenKeys();
     } catch (e) {
       if (mounted) {
         showGhostDialog(
@@ -7022,8 +7418,7 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
         builder: (context, constraints) {
           final wide = constraints.maxWidth > 820;
           final metrics = [
-            DashboardMetric(icon: Icons.shield_rounded, title: 'Статус', value: _statusText(sub), color: statusColor),
-            DashboardMetric(icon: Icons.schedule_rounded, title: 'Осталось', value: active ? (days == null ? '—' : '$days дн.') : '—', color: active && days != null && days <= 3 ? GhostColors.gold : GhostColors.orangeSoft),
+            DashboardMetric(icon: Icons.schedule_rounded, title: 'Осталось', value: active ? (days == null ? '—' : '$days дн.') : '0 дн.', color: active && days != null && days <= 3 ? GhostColors.gold : GhostColors.orangeSoft),
             DashboardMetric(icon: Icons.workspace_premium_rounded, title: 'Тариф', value: active ? (sub?.planName ?? 'Подписка') : 'Выберите', color: GhostColors.orangeSoft),
             DashboardMetric(icon: Icons.devices_rounded, title: 'Устройства', value: active ? 'до ${sub?.deviceLimit ?? 3}' : 'до 3', color: GhostColors.orangeSoft),
           ];
@@ -7033,8 +7428,9 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
             children: [
               Row(
                 children: [
-                  MiniBadge(text: 'GHOSTNET DASHBOARD'),
+                  const MiniBadge(text: 'ТВОЯ ЗАЩИТА'),
                   const Spacer(),
+                  CompactStatusPill(text: _statusText(sub), active: active),
                   IconButton(
                     tooltip: 'Обновить',
                     onPressed: _loading ? null : _loadDashboard,
@@ -7043,12 +7439,12 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
                 ],
               ),
               const SizedBox(height: 16),
-              Text('Привет, ${widget.profile.name}', style: TextStyle(fontSize: titleSize, height: 1.06, fontWeight: FontWeight.w900)),
+              Text(active ? 'GhostNet защищает тебя' : 'Подписка не активна', style: TextStyle(fontSize: titleSize, height: 1.06, fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),
               Text(
                 active
-                    ? 'Подписка активна до ${formatDate(sub?.expiresAt)}. Управляй ключами, продлением и поддержкой из одного кабинета.'
-                    : 'Оформи подписку или активируй пробный доступ, чтобы получить ключи GhostNet.',
+                    ? 'Подписка активна до ${formatDate(sub?.expiresAt)}. Управляй ключами и продлением из одного приложения.'
+                    : 'Выбери тариф или активируй пробный доступ на 24 часа.',
                 style: const TextStyle(color: GhostColors.muted, height: 1.45, fontSize: 14.5),
               ),
               if (_error != null) ...[
@@ -7058,7 +7454,7 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
               const SizedBox(height: 18),
               LayoutBuilder(
                 builder: (context, metricConstraints) {
-                  final columns = metricConstraints.maxWidth > 680 ? 4 : metricConstraints.maxWidth > 430 ? 2 : 1;
+                  final columns = metricConstraints.maxWidth > 620 ? 3 : metricConstraints.maxWidth > 430 ? 2 : 1;
                   final itemWidth = (metricConstraints.maxWidth - 10 * (columns - 1)) / columns;
                   return Wrap(
                     spacing: 10,
@@ -7068,22 +7464,22 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
                 },
               ),
               const SizedBox(height: 18),
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 340),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      PrimaryButton(text: active ? 'Продлить подписку' : 'Приобрести подписку', icon: Icons.shopping_cart_rounded, onPressed: widget.onOpenTariffs),
-                      const SizedBox(height: 10),
-                      PrimaryButton(text: 'Мои ключи', icon: Icons.vpn_key_rounded, onPressed: widget.onOpenAccount),
-                      if (!active) ...[
-                        const SizedBox(height: 10),
-                        SecondaryButton(text: _trialLoading ? 'Активируем...' : 'Пробный доступ', icon: Icons.card_giftcard_rounded, onPressed: _trialLoading ? null : _claimTrial),
-                      ],
-                    ],
-                  ),
-                ),
+              LayoutBuilder(
+                builder: (context, buttonConstraints) {
+                  final narrow = buttonConstraints.maxWidth < 520;
+                  final actions = [
+                    PrimaryButton(text: active ? 'Продлить подписку' : 'Приобрести подписку', icon: Icons.shopping_cart_rounded, onPressed: widget.onOpenTariffs),
+                    SecondaryButton(text: 'Мои ключи', icon: Icons.vpn_key_rounded, onPressed: widget.onOpenKeys),
+                    if (!active) SecondaryButton(text: _trialLoading ? 'Активируем...' : 'Пробный доступ 24 часа', icon: Icons.card_giftcard_rounded, onPressed: _trialLoading ? null : _claimTrial),
+                  ];
+                  if (narrow) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [for (var i = 0; i < actions.length; i++) ...[Center(child: actions[i]), if (i != actions.length - 1) const SizedBox(height: 10)]],
+                    );
+                  }
+                  return Wrap(spacing: 10, runSpacing: 10, children: actions);
+                },
               ),
             ],
           );
@@ -7244,23 +7640,30 @@ class StatusLine extends StatelessWidget {
 
 class QuickActionsGrid extends StatelessWidget {
   final VoidCallback onOpenTariffs;
-  final VoidCallback onOpenAccount;
+  final VoidCallback onOpenKeys;
   final VoidCallback onOpenGuide;
   final VoidCallback onOpenSupport;
   final VoidCallback onOpenNews;
 
-  const QuickActionsGrid({super.key, required this.onOpenTariffs, required this.onOpenAccount, required this.onOpenGuide, required this.onOpenSupport, required this.onOpenNews});
+  const QuickActionsGrid({
+    super.key,
+    required this.onOpenTariffs,
+    required this.onOpenKeys,
+    required this.onOpenGuide,
+    required this.onOpenSupport,
+    required this.onOpenNews,
+  });
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final items = [
-          ActionCard(icon: Icons.vpn_key_rounded, title: 'Мои ключи', text: 'Скопировать подписку', onTap: onOpenAccount),
           ActionCard(icon: Icons.local_offer_rounded, title: 'Тарифы', text: 'Оплата и промокод', onTap: onOpenTariffs),
-          ActionCard(icon: Icons.menu_book_rounded, title: 'Гайд', text: 'Как подключиться', onTap: onOpenGuide),
-          ActionCard(icon: Icons.newspaper_rounded, title: 'Новости', text: 'Канал GhostNet', onTap: onOpenNews),
+          ActionCard(icon: Icons.vpn_key_rounded, title: 'Мои ключи', text: 'Подписка и серверы', onTap: onOpenKeys),
+          ActionCard(icon: Icons.menu_book_rounded, title: 'Подключение', text: 'Инструкция для устройства', onTap: onOpenGuide),
           ActionCard(icon: Icons.support_agent_rounded, title: 'Поддержка', text: 'Чат в приложении', onTap: onOpenSupport),
+          ActionCard(icon: Icons.newspaper_rounded, title: 'Новости', text: 'Канал GhostNet', onTap: onOpenNews),
         ];
         final columns = constraints.maxWidth > 1100 ? 5 : constraints.maxWidth > 820 ? 3 : constraints.maxWidth > 520 ? 2 : 1;
         return Wrap(
@@ -7935,12 +8338,28 @@ class _SubscriptionStatusCardState extends State<SubscriptionStatusCard> {
 }
 
 class AccountActions extends StatelessWidget {
+  final UserProfile profile;
   final VoidCallback onLogout;
   final VoidCallback onOpenTariffs;
   final VoidCallback onOpenSupport;
   final VoidCallback onOpenNotifications;
+  final VoidCallback? onOpenAdmin;
+  final VoidCallback onOpenNews;
+  final VoidCallback onRefresh;
+  final bool refreshing;
 
-  const AccountActions({super.key, required this.onLogout, required this.onOpenTariffs, required this.onOpenSupport, required this.onOpenNotifications});
+  const AccountActions({
+    super.key,
+    required this.profile,
+    required this.onLogout,
+    required this.onOpenTariffs,
+    required this.onOpenSupport,
+    required this.onOpenNotifications,
+    required this.onOpenAdmin,
+    required this.onOpenNews,
+    required this.onRefresh,
+    required this.refreshing,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -7948,21 +8367,33 @@ class AccountActions extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const MiniBadge(text: 'БЫСТРЫЕ ДЕЙСТВИЯ'),
+          const MiniBadge(text: 'НАСТРОЙКИ И СЕРВИС'),
           const SizedBox(height: 14),
-          PrimaryButton(text: 'Купить / продлить', icon: Icons.update_rounded, onPressed: onOpenTariffs),
-          const SizedBox(height: 12),
-          SecondaryButton(
-            text: 'Проверить обновления',
-            icon: Icons.system_update_alt_rounded,
-            onPressed: () => AppUpdateService.check(context, manual: true),
-          ),
-          const SizedBox(height: 12),
+          const Text('Управление приложением', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 14),
+          SecondaryButton(text: refreshing ? 'Обновляем...' : 'Обновить данные', icon: Icons.refresh_rounded, onPressed: refreshing ? null : onRefresh),
+          const SizedBox(height: 10),
+          SecondaryButton(text: 'Уведомления', icon: Icons.notifications_rounded, onPressed: onOpenNotifications),
+          const SizedBox(height: 10),
+          SecondaryButton(text: 'Проверить обновления', icon: Icons.system_update_alt_rounded, onPressed: () => AppUpdateService.check(context, manual: true)),
+          const SizedBox(height: 10),
+          SecondaryButton(text: 'Купить / продлить', icon: Icons.update_rounded, onPressed: onOpenTariffs),
+          const SizedBox(height: 10),
           SecondaryButton(text: 'Поддержка', icon: Icons.support_agent_rounded, onPressed: onOpenSupport),
+          if (onOpenAdmin != null) ...[
+            const SizedBox(height: 10),
+            SecondaryButton(
+              text: profile.isAdmin ? 'Админ-панель' : 'Панель поддержки',
+              icon: Icons.admin_panel_settings_rounded,
+              onPressed: onOpenAdmin,
+            ),
+          ],
+          const SizedBox(height: 10),
+          SecondaryButton(text: 'Новости GhostNet', icon: Icons.newspaper_rounded, onPressed: onOpenNews),
           const SizedBox(height: 18),
           Container(height: 1, color: Colors.white.withOpacity(.07)),
           const SizedBox(height: 10),
-          TextButton.icon(onPressed: onLogout, icon: const Icon(Icons.logout_rounded), label: const Text('Выйти из профиля')),
+          SecondaryButton(text: 'Выйти из аккаунта', icon: Icons.logout_rounded, danger: true, onPressed: onLogout),
         ],
       ),
     );
@@ -8029,10 +8460,10 @@ class GhostBottomNav extends StatelessWidget {
       destinations: [
         const NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Главная'),
         const NavigationDestination(icon: Icon(Icons.local_offer_rounded), label: 'Тарифы'),
-        const NavigationDestination(icon: Icon(Icons.person_rounded), label: 'Кабинет'),
+        const NavigationDestination(icon: Icon(Icons.vpn_key_rounded), label: 'Ключи'),
         const NavigationDestination(icon: Icon(Icons.menu_book_rounded), label: 'Гайд'),
-        const NavigationDestination(icon: Icon(Icons.help_rounded), label: 'Помощь'),
-        if (showAdmin) const NavigationDestination(icon: Icon(Icons.admin_panel_settings_rounded), label: 'Админ'),
+        const NavigationDestination(icon: Icon(Icons.person_rounded), label: 'Профиль'),
+        if (showAdmin) const NavigationDestination(icon: Icon(Icons.admin_panel_settings_rounded), label: 'Панель'),
       ],
     );
   }
@@ -8050,10 +8481,10 @@ class GhostSideBar extends StatelessWidget {
     final items = [
       const _MenuItem(Icons.home_rounded, 'Главная'),
       const _MenuItem(Icons.local_offer_rounded, 'Тарифы'),
-      const _MenuItem(Icons.person_rounded, 'Кабинет'),
+      const _MenuItem(Icons.vpn_key_rounded, 'Мои ключи'),
       const _MenuItem(Icons.menu_book_rounded, 'Гайд'),
-      const _MenuItem(Icons.help_rounded, 'Помощь'),
-      if (showAdmin) const _MenuItem(Icons.admin_panel_settings_rounded, 'Админ'),
+      const _MenuItem(Icons.person_rounded, 'Профиль'),
+      if (showAdmin) const _MenuItem(Icons.admin_panel_settings_rounded, 'Панель'),
     ];
     return Container(
       width: 246,
